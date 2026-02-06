@@ -88,6 +88,8 @@ hookbin serve [OPTIONS]
 | `--max-hooks` | `100` | Maximum number of hooks |
 | `--max-payload` | `1048576` | Maximum payload size in bytes (1 MB) |
 | `--max-requests` | `1000` | Max stored requests per hook |
+| `--retention` | `86400` | Request retention in seconds (24 hours) |
+| `--rate-limit` | `60` | Rate limit per hook (requests per minute) |
 | `--config` | — | Path to TOML config file |
 
 ### TOML Config
@@ -99,6 +101,8 @@ data = "/var/lib/hookbin"
 max_hooks = 50
 max_payload = 2097152
 max_requests = 500
+retention = 43200     # 12 hours (in seconds)
+rate_limit = 30       # requests per minute per hook
 ```
 
 ```bash
@@ -114,9 +118,11 @@ Hookbin follows the [TigerBeetle philosophy](https://tigerbeetle.com/): determin
 | Max hooks | 100 | `--max-hooks` |
 | Max payload size | 1 MB | `--max-payload` |
 | Max requests per hook | 1,000 | `--max-requests` |
+| Request retention | 24 hours | `--retention` |
+| Rate limit per hook | 60 req/min | `--rate-limit` |
 | SQLite WAL mode | Always on | — |
 
-**Planned:** rate limiting (per-hook token bucket) and automatic retention cleanup are coming in M4.
+**Note:** retention cleanup and rate limiting flags are accepted but not yet enforced — enforcement is coming in M4.
 
 Everything is bounded. Nothing grows without limit.
 
@@ -125,7 +131,7 @@ Everything is bounded. Nothing grows without limit.
 ```bash
 # Prerequisites: Rust stable toolchain
 git clone https://github.com/copyleftdev/hookbin.dev.git
-cd hook-bin.dev
+cd hookbin.dev
 
 # Development
 cargo build             # Debug build
