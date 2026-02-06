@@ -1,0 +1,89 @@
+{
+  "id": "HB-015",
+  "title": "Hook detail and deletion endpoints (GET/DELETE /api/hooks/{id})",
+  "type": "story",
+  "status": "done",
+  "priority": "high",
+  "labels": ["story", "priority:high", "api", "storage"],
+  "milestone": "M2: API",
+  "epic": "HB-013",
+  "depends_on": ["HB-014"],
+  "blocks": ["HB-016"],
+  "user_story": "As a user, I need to inspect a single hook's details and delete hooks I no longer need, so I can manage my webhook inboxes.",
+  "description": "Implement two endpoints: GET /api/hooks/{id} returns full hook details as JSON, and DELETE /api/hooks/{id} removes the hook and all its captured requests via SQL CASCADE. A new database method delete_hook() is needed. The GET response includes hook_id, name, created_at, request_count, and url. The DELETE response is 200 with a confirmation message. Both return 404 for nonexistent hooks.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a hook exists with hook_id 'abc123'",
+      "when": "sending GET /api/hooks/abc123",
+      "then": "response is 200 with JSON containing hook_id, name, created_at, request_count, and url"
+    },
+    {
+      "id": "AC-2",
+      "given": "no hook with hook_id 'nonexistent'",
+      "when": "sending GET /api/hooks/nonexistent",
+      "then": "response is 404 with structured JSON error and suggestion"
+    },
+    {
+      "id": "AC-3",
+      "given": "a hook exists with hook_id 'abc123' and 5 captured requests",
+      "when": "sending DELETE /api/hooks/abc123",
+      "then": "response is 200 with confirmation, the hook is removed, and all 5 requests are CASCADE-deleted"
+    },
+    {
+      "id": "AC-4",
+      "given": "no hook with hook_id 'nonexistent'",
+      "when": "sending DELETE /api/hooks/nonexistent",
+      "then": "response is 404 with structured JSON error and suggestion"
+    },
+    {
+      "id": "AC-5",
+      "given": "a hook is deleted",
+      "when": "listing hooks via GET /api/hooks",
+      "then": "the deleted hook no longer appears in the list"
+    },
+    {
+      "id": "AC-6",
+      "given": "this feature",
+      "when": "running cargo test",
+      "then": "integration tests verify GET detail, DELETE, 404s, and CASCADE behavior"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "serde_json", "rusqlite"],
+    "files": ["src/db.rs", "src/handlers/hooks.rs", "src/server.rs"],
+    "functions": [
+      {
+        "name": "delete_hook",
+        "signature": "pub fn delete_hook(&self, hook_id: &str) -> Result<(), AppError>",
+        "description": "Delete a hook by ID. Requests are CASCADE-deleted by foreign key."
+      },
+      {
+        "name": "get_hook_handler",
+        "signature": "pub async fn get_hook(State(state): State<AppState>, Path(hook_id): Path<String>) -> Result<impl IntoResponse, AppError>",
+        "description": "GET /api/hooks/{id} — return hook details"
+      },
+      {
+        "name": "delete_hook_handler",
+        "signature": "pub async fn delete_hook(State(state): State<AppState>, Path(hook_id): Path<String>) -> Result<impl IntoResponse, AppError>",
+        "description": "DELETE /api/hooks/{id} — remove hook and all requests"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 5,
+      "throughput_per_second": 5000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "CASCADE delete handled by SQLite foreign key constraint. Deletion frees bounded resources (hooks and requests)."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}
