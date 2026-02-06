@@ -2,7 +2,7 @@
   "id": "HB-004",
   "title": "CLI argument parsing and TOML config loading",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical", "operations"],
   "milestone": "M0: Foundation",
