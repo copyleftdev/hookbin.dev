@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 use rusqlite::{params, Connection};
 
@@ -9,8 +10,12 @@ use crate::error::AppError;
 use crate::models::{CapturedRequest, Hook};
 
 /// SQLite database wrapper with WAL mode and embedded migrations.
+///
+/// Uses a `Mutex<Connection>` so the database can be shared across
+/// async tasks via `Arc<Database>`. rusqlite's `Connection` is `!Sync`,
+/// so the mutex provides the required thread safety.
 pub struct Database {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
 
 impl Database {
@@ -39,7 +44,9 @@ impl Database {
         Self::configure(&conn)?;
         Self::run_migrations(&conn)?;
 
-        Ok(Self { conn })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     /// Open an in-memory database for testing.
@@ -54,7 +61,16 @@ impl Database {
 
         Self::run_migrations(&conn)?;
 
-        Ok(Self { conn })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Lock the connection, mapping a poisoned mutex to AppError.
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>, AppError> {
+        self.conn
+            .lock()
+            .map_err(|e| AppError::Internal(format!("database lock poisoned: {e}")))
     }
 
     /// Configure SQLite pragmas: WAL mode, foreign keys.
@@ -111,39 +127,39 @@ impl Database {
 
     /// Insert a new hook.
     pub fn insert_hook(&self, hook: &Hook) -> Result<(), AppError> {
-        self.conn
-            .execute(
-                "INSERT INTO hooks (hook_id, name, created_at, request_count)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![hook.hook_id, hook.name, hook.created_at, hook.request_count],
-            )
-            .map_err(|e| {
-                AppError::Internal(format!("failed to insert hook '{}': {}", hook.hook_id, e))
-            })?;
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO hooks (hook_id, name, created_at, request_count)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![hook.hook_id, hook.name, hook.created_at, hook.request_count],
+        )
+        .map_err(|e| {
+            AppError::Internal(format!("failed to insert hook '{}': {}", hook.hook_id, e))
+        })?;
         Ok(())
     }
 
     /// Fetch a hook by ID.
     pub fn get_hook(&self, hook_id: &str) -> Result<Hook, AppError> {
-        self.conn
-            .query_row(
-                "SELECT hook_id, name, created_at, request_count FROM hooks WHERE hook_id = ?1",
-                params![hook_id],
-                |row| {
-                    Ok(Hook {
-                        hook_id: row.get(0)?,
-                        name: row.get(1)?,
-                        created_at: row.get(2)?,
-                        request_count: row.get(3)?,
-                    })
-                },
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    AppError::NotFound(format!("hook '{hook_id}' not found"))
-                }
-                other => AppError::Internal(format!("failed to get hook '{hook_id}': {other}")),
-            })
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT hook_id, name, created_at, request_count FROM hooks WHERE hook_id = ?1",
+            params![hook_id],
+            |row| {
+                Ok(Hook {
+                    hook_id: row.get(0)?,
+                    name: row.get(1)?,
+                    created_at: row.get(2)?,
+                    request_count: row.get(3)?,
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("hook '{hook_id}' not found"))
+            }
+            other => AppError::Internal(format!("failed to get hook '{hook_id}': {other}")),
+        })
     }
 
     // -- Request operations --
@@ -153,41 +169,40 @@ impl Database {
         let headers_json = serde_json::to_string(&req.headers)
             .map_err(|e| AppError::Internal(format!("failed to serialize headers: {e}")))?;
 
-        self.conn
-            .execute(
-                "INSERT INTO requests (request_id, hook_id, method, path, headers, body, content_length, source_ip, received_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    req.request_id,
-                    req.hook_id,
-                    req.method,
-                    req.path,
-                    headers_json,
-                    req.body,
-                    req.content_length,
-                    req.source_ip,
-                    req.received_at,
-                ],
-            )
-            .map_err(|e| {
-                AppError::Internal(format!(
-                    "failed to insert request '{}': {}",
-                    req.request_id, e
-                ))
-            })?;
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO requests (request_id, hook_id, method, path, headers, body, content_length, source_ip, received_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                req.request_id,
+                req.hook_id,
+                req.method,
+                req.path,
+                headers_json,
+                req.body,
+                req.content_length,
+                req.source_ip,
+                req.received_at,
+            ],
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "failed to insert request '{}': {}",
+                req.request_id, e
+            ))
+        })?;
 
         // Increment the hook's request_count
-        self.conn
-            .execute(
-                "UPDATE hooks SET request_count = request_count + 1 WHERE hook_id = ?1",
-                params![req.hook_id],
-            )
-            .map_err(|e| {
-                AppError::Internal(format!(
-                    "failed to update request count for hook '{}': {}",
-                    req.hook_id, e
-                ))
-            })?;
+        conn.execute(
+            "UPDATE hooks SET request_count = request_count + 1 WHERE hook_id = ?1",
+            params![req.hook_id],
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "failed to update request count for hook '{}': {}",
+                req.hook_id, e
+            ))
+        })?;
 
         Ok(())
     }
@@ -198,8 +213,8 @@ impl Database {
         hook_id: &str,
         limit: u32,
     ) -> Result<Vec<CapturedRequest>, AppError> {
-        let mut stmt = self
-            .conn
+        let conn = self.lock()?;
+        let mut stmt = conn
             .prepare(
                 "SELECT request_id, hook_id, method, path, headers, body, content_length, source_ip, received_at
                  FROM requests
@@ -241,10 +256,14 @@ impl Database {
         Ok(results)
     }
 
-    /// Get the underlying connection (for pragma checks in tests).
+    /// Get access to the underlying connection for pragma checks in tests.
     #[cfg(test)]
-    pub fn conn(&self) -> &Connection {
-        &self.conn
+    pub fn with_conn<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&Connection) -> R,
+    {
+        let conn = self.conn.lock().expect("test lock");
+        f(&conn)
     }
 }
 
@@ -289,15 +308,14 @@ mod tests {
     #[test]
     fn open_in_memory_creates_schema() {
         let db = test_db();
-        // Verify tables exist by querying sqlite_master
-        let count: i32 = db
-            .conn()
-            .query_row(
+        let count: i32 = db.with_conn(|conn| {
+            conn.query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('hooks', 'requests', 'tokens')",
                 [],
                 |row| row.get(0),
             )
-            .unwrap();
+            .unwrap()
+        });
         assert_eq!(count, 3, "expected 3 tables: hooks, requests, tokens");
     }
 
@@ -313,10 +331,10 @@ mod tests {
         assert!(tmp.join("hookbin.db").exists(), "db file should exist");
 
         // Verify WAL mode on file-based database
-        let mode: String = db
-            .conn()
-            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
-            .unwrap();
+        let mode: String = db.with_conn(|conn| {
+            conn.query_row("PRAGMA journal_mode", [], |row| row.get(0))
+                .unwrap()
+        });
         assert_eq!(mode, "wal");
 
         // Clean up
@@ -345,10 +363,10 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("hookbin-test-{}", nanoid::nanoid!()));
         let db = Database::open(&tmp).expect("should open");
 
-        let mode: String = db
-            .conn()
-            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
-            .unwrap();
+        let mode: String = db.with_conn(|conn| {
+            conn.query_row("PRAGMA journal_mode", [], |row| row.get(0))
+                .unwrap()
+        });
         assert_eq!(mode, "wal");
 
         std::fs::remove_dir_all(&tmp).ok();
@@ -358,10 +376,10 @@ mod tests {
     #[test]
     fn foreign_keys_are_enabled() {
         let db = test_db();
-        let fk: i32 = db
-            .conn()
-            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-            .unwrap();
+        let fk: i32 = db.with_conn(|conn| {
+            conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+                .unwrap()
+        });
         assert_eq!(fk, 1, "foreign keys should be enabled");
     }
 
@@ -541,14 +559,14 @@ mod tests {
     #[test]
     fn requests_index_exists() {
         let db = test_db();
-        let count: i32 = db
-            .conn()
-            .query_row(
+        let count: i32 = db.with_conn(|conn| {
+            conn.query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_requests_hook_id_received'",
                 [],
                 |row| row.get(0),
             )
-            .unwrap();
+            .unwrap()
+        });
         assert_eq!(
             count, 1,
             "index on requests(hook_id, received_at) should exist"

@@ -7,8 +7,13 @@ mod rate_limit;
 mod retention;
 mod server;
 
+use std::sync::Arc;
+use std::time::Instant;
+
 use clap::Parser;
 use config::{Cli, Config};
+use db::Database;
+use server::AppState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,8 +49,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 env!("CARGO_PKG_VERSION")
             );
 
-            // Placeholder until HB-007 wires up the server
+            let db = match Database::open(&config.data) {
+                Ok(db) => db,
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to open database");
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            let state = AppState {
+                db: Arc::new(db),
+                config: Arc::new(config.clone()),
+                start_time: Instant::now(),
+            };
+
+            let app = server::build_router(state);
+
+            let addr = format!("0.0.0.0:{}", config.port);
+            let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
+                tracing::error!(addr = %addr, error = %e, "failed to bind");
+                e
+            })?;
+
+            tracing::info!(addr = %addr, "listening");
+
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+
+            tracing::info!("shutdown complete");
             Ok(())
         }
+    }
+}
+
+/// Wait for Ctrl+C or SIGTERM for graceful shutdown.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received Ctrl+C, shutting down"),
+        _ = terminate => tracing::info!("received SIGTERM, shutting down"),
     }
 }
