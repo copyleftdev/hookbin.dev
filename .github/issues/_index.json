@@ -2,7 +2,7 @@
   "project": "hookbin.dev",
   "prefix": "HB",
   "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
-  "total_issues": 12,
+  "total_issues": 17,
   "epics": [
     {
       "id": "HB-001",
@@ -17,6 +17,13 @@
       "status": "done",
       "children": ["HB-009", "HB-010", "HB-011", "HB-012"],
       "file": "epics/HB-008.json"
+    },
+    {
+      "id": "HB-013",
+      "title": "M2: API — hook CRUD, request listing, request inspection",
+      "status": "ready",
+      "children": ["HB-014", "HB-015", "HB-016", "HB-017"],
+      "file": "epics/HB-013.json"
     }
   ],
   "stories": [
@@ -80,7 +87,7 @@
       "status": "done",
       "epic": "HB-008",
       "depends_on": ["HB-007"],
-      "blocks": ["HB-010", "HB-012"],
+      "blocks": ["HB-010", "HB-012", "HB-014"],
       "file": "stories/m1-ingestion/HB-009.json"
     },
     {
@@ -109,6 +116,42 @@
       "depends_on": ["HB-009", "HB-010"],
       "blocks": [],
       "file": "stories/m1-ingestion/HB-012.json"
+    },
+    {
+      "id": "HB-014",
+      "title": "List hooks endpoint (GET /api/hooks)",
+      "status": "done",
+      "epic": "HB-013",
+      "depends_on": ["HB-009"],
+      "blocks": ["HB-015", "HB-016"],
+      "file": "stories/m2-api/HB-014.json"
+    },
+    {
+      "id": "HB-015",
+      "title": "Hook detail and deletion endpoints (GET/DELETE /api/hooks/{id})",
+      "status": "ready",
+      "epic": "HB-013",
+      "depends_on": ["HB-014"],
+      "blocks": ["HB-016"],
+      "file": "stories/m2-api/HB-015.json"
+    },
+    {
+      "id": "HB-016",
+      "title": "List captured requests endpoint (GET /api/hooks/{id}/requests)",
+      "status": "ready",
+      "epic": "HB-013",
+      "depends_on": ["HB-014", "HB-015"],
+      "blocks": ["HB-017"],
+      "file": "stories/m2-api/HB-016.json"
+    },
+    {
+      "id": "HB-017",
+      "title": "Request detail endpoint (GET /api/hooks/{id}/requests/{rid})",
+      "status": "ready",
+      "epic": "HB-013",
+      "depends_on": ["HB-016"],
+      "blocks": [],
+      "file": "stories/m2-api/HB-017.json"
     }
   ],
   "dependency_graph": {
@@ -118,15 +161,19 @@
     "HB-005": { "depends_on": ["HB-002", "HB-003"], "blocks": ["HB-006"] },
     "HB-006": { "depends_on": ["HB-003", "HB-004", "HB-005"], "blocks": ["HB-007"] },
     "HB-007": { "depends_on": ["HB-003", "HB-004", "HB-006"], "blocks": ["HB-009"] },
-    "HB-009": { "depends_on": ["HB-007"], "blocks": ["HB-010", "HB-012"] },
+    "HB-009": { "depends_on": ["HB-007"], "blocks": ["HB-010", "HB-012", "HB-014"] },
     "HB-010": { "depends_on": ["HB-009"], "blocks": ["HB-011", "HB-012"] },
     "HB-011": { "depends_on": ["HB-010"], "blocks": [] },
-    "HB-012": { "depends_on": ["HB-009", "HB-010"], "blocks": [] }
+    "HB-012": { "depends_on": ["HB-009", "HB-010"], "blocks": [] },
+    "HB-014": { "depends_on": ["HB-009"], "blocks": ["HB-015", "HB-016"] },
+    "HB-015": { "depends_on": ["HB-014"], "blocks": ["HB-016"] },
+    "HB-016": { "depends_on": ["HB-014", "HB-015"], "blocks": ["HB-017"] },
+    "HB-017": { "depends_on": ["HB-016"], "blocks": [] }
   },
   "milestone_progress": {
     "M0: Foundation": { "total": 6, "done": 6 },
     "M1: Ingestion": { "total": 4, "done": 4 },
-    "M2: API": { "total": 0, "done": 0 },
+    "M2: API": { "total": 4, "done": 1 },
     "M3: Dashboard": { "total": 0, "done": 0 },
     "M4: Operations": { "total": 0, "done": 0 },
     "M5: Hardening": { "total": 0, "done": 0 }

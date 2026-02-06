@@ -18,6 +18,33 @@ pub struct CreateHookRequest {
     pub name: Option<String>,
 }
 
+/// GET /api/hooks — list all webhook inboxes.
+///
+/// Returns a JSON object with a `hooks` array and a `count` field.
+/// Hooks are ordered by created_at descending (newest first).
+pub async fn list_hooks(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
+    let hooks = state.db.list_hooks()?;
+    let count = hooks.len();
+
+    let hooks_json: Vec<serde_json::Value> = hooks
+        .iter()
+        .map(|h| {
+            json!({
+                "hook_id": h.hook_id,
+                "name": h.name,
+                "created_at": h.created_at,
+                "request_count": h.request_count,
+                "url": format!("/h/{}", h.hook_id),
+            })
+        })
+        .collect();
+
+    Ok(axum::Json(json!({
+        "hooks": hooks_json,
+        "count": count,
+    })))
+}
+
 /// POST /api/hooks — create a new webhook inbox.
 ///
 /// Accepts an optional JSON body with a `name` field.

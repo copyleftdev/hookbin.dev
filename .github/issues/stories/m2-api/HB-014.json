@@ -1,0 +1,78 @@
+{
+  "id": "HB-014",
+  "title": "List hooks endpoint (GET /api/hooks)",
+  "type": "story",
+  "status": "done",
+  "priority": "critical",
+  "labels": ["story", "priority:critical", "api"],
+  "milestone": "M2: API",
+  "epic": "HB-013",
+  "depends_on": ["HB-009"],
+  "blocks": ["HB-015", "HB-016"],
+  "user_story": "As a user, I need to list all my webhook inboxes so I can see what hooks exist and their current status.",
+  "description": "Implement GET /api/hooks to return a JSON array of all hooks. Each hook includes hook_id, name, created_at, request_count, and the ingestion URL. The list is ordered by created_at descending (newest first). A new database method list_hooks() is needed. The response includes a top-level 'hooks' key wrapping the array and a 'count' field for the total number of hooks.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "3 hooks exist in the database",
+      "when": "sending GET /api/hooks",
+      "then": "response is 200 with JSON containing 'hooks' array of 3 items and 'count': 3"
+    },
+    {
+      "id": "AC-2",
+      "given": "no hooks exist",
+      "when": "sending GET /api/hooks",
+      "then": "response is 200 with JSON containing empty 'hooks' array and 'count': 0"
+    },
+    {
+      "id": "AC-3",
+      "given": "hooks exist",
+      "when": "listing hooks",
+      "then": "each hook object contains hook_id, name, created_at, request_count, and url fields"
+    },
+    {
+      "id": "AC-4",
+      "given": "multiple hooks exist",
+      "when": "listing hooks",
+      "then": "hooks are ordered by created_at descending (newest first)"
+    },
+    {
+      "id": "AC-5",
+      "given": "this feature",
+      "when": "running cargo test",
+      "then": "integration tests verify listing with 0, 1, and multiple hooks"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "serde_json"],
+    "files": ["src/db.rs", "src/handlers/hooks.rs", "src/server.rs"],
+    "functions": [
+      {
+        "name": "list_hooks",
+        "signature": "pub fn list_hooks(&self) -> Result<Vec<Hook>, AppError>",
+        "description": "List all hooks ordered by created_at descending"
+      },
+      {
+        "name": "list_hooks_handler",
+        "signature": "pub async fn list_hooks(State(state): State<AppState>) -> Result<impl IntoResponse, AppError>",
+        "description": "GET /api/hooks — return all hooks as JSON array"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 5,
+      "throughput_per_second": 10000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Hook count is already bounded by max_hooks. List query is bounded by max_hooks rows."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}

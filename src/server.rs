@@ -33,7 +33,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/hooks",
-            axum::routing::post(handlers::hooks::create_hook),
+            axum::routing::get(handlers::hooks::list_hooks).post(handlers::hooks::create_hook),
         )
         .route(
             "/h/{hook_id}",
@@ -1173,5 +1173,157 @@ mod tests {
         assert!(json["status"].is_number(), "missing 'status' field");
         assert!(json["suggestion"].is_string(), "missing 'suggestion' field");
         assert!(json["error"].as_str().unwrap().contains("--max-hooks"));
+    }
+
+    // -- HB-014: List hooks tests --
+
+    // AC-1: GET /api/hooks returns all hooks with count
+    #[tokio::test]
+    async fn list_hooks_returns_all_hooks() {
+        let state = test_state();
+        create_test_hook(&state, "Hook A").await;
+        create_test_hook(&state, "Hook B").await;
+        create_test_hook(&state, "Hook C").await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 3);
+        assert_eq!(json["hooks"].as_array().unwrap().len(), 3);
+    }
+
+    // AC-2: GET /api/hooks with no hooks returns empty array
+    #[tokio::test]
+    async fn list_hooks_empty_returns_zero() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 0);
+        assert!(json["hooks"].as_array().unwrap().is_empty());
+    }
+
+    // AC-3: Each hook has all required fields
+    #[tokio::test]
+    async fn list_hooks_contains_all_fields() {
+        let state = test_state();
+        create_test_hook(&state, "Field Check").await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        let hook = &json["hooks"][0];
+        assert!(hook["hook_id"].is_string(), "missing hook_id");
+        assert_eq!(hook["name"], "Field Check");
+        assert!(hook["created_at"].is_number(), "missing created_at");
+        assert_eq!(hook["request_count"], 0);
+        assert!(
+            hook["url"].as_str().unwrap().starts_with("/h/"),
+            "url should start with /h/"
+        );
+    }
+
+    // AC-4: Hooks are ordered by created_at descending
+    #[tokio::test]
+    async fn list_hooks_ordered_newest_first() {
+        let state = test_state();
+
+        // Insert hooks with distinct created_at by using the DB directly
+        use crate::models::Hook;
+        let mut h1 = Hook::new("Alpha");
+        h1.created_at = 1000;
+        let mut h2 = Hook::new("Beta");
+        h2.created_at = 2000;
+        let mut h3 = Hook::new("Gamma");
+        h3.created_at = 3000;
+
+        state.db.insert_hook(&h1).unwrap();
+        state.db.insert_hook(&h2).unwrap();
+        state.db.insert_hook(&h3).unwrap();
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        let hooks = json["hooks"].as_array().unwrap();
+        assert_eq!(hooks.len(), 3);
+        assert_eq!(hooks[0]["name"], "Gamma"); // newest (3000)
+        assert_eq!(hooks[1]["name"], "Beta"); // (2000)
+        assert_eq!(hooks[2]["name"], "Alpha"); // oldest (1000)
+    }
+
+    // AC-5: Single hook listing
+    #[tokio::test]
+    async fn list_hooks_single_hook() {
+        let state = test_state();
+        create_test_hook(&state, "Only Hook").await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 1);
+        assert_eq!(json["hooks"][0]["name"], "Only Hook");
     }
 }
