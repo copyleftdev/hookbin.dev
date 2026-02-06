@@ -21,7 +21,7 @@
     {
       "id": "HB-013",
       "title": "M2: API — hook CRUD, request listing, request inspection",
-      "status": "ready",
+      "status": "done",
       "children": ["HB-014", "HB-015", "HB-016", "HB-017"],
       "file": "epics/HB-013.json"
     }
@@ -147,7 +147,7 @@
     {
       "id": "HB-017",
       "title": "Request detail endpoint (GET /api/hooks/{id}/requests/{rid})",
-      "status": "ready",
+      "status": "done",
       "epic": "HB-013",
       "depends_on": ["HB-016"],
       "blocks": [],
@@ -173,7 +173,7 @@
   "milestone_progress": {
     "M0: Foundation": { "total": 6, "done": 6 },
     "M1: Ingestion": { "total": 4, "done": 4 },
-    "M2: API": { "total": 4, "done": 3 },
+    "M2: API": { "total": 4, "done": 4 },
     "M3: Dashboard": { "total": 0, "done": 0 },
     "M4: Operations": { "total": 0, "done": 0 },
     "M5: Hardening": { "total": 0, "done": 0 }

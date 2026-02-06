@@ -45,6 +45,10 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::get(handlers::requests::list_requests),
         )
         .route(
+            "/api/hooks/{hook_id}/requests/{request_id}",
+            axum::routing::get(handlers::requests::get_request),
+        )
+        .route(
             "/h/{hook_id}",
             axum::routing::any(handlers::ingest::ingest_webhook),
         )
@@ -72,6 +76,7 @@ mod tests {
     use axum::body::to_bytes;
     use axum::extract::connect_info::ConnectInfo;
     use axum::http::Request;
+    use base64::Engine;
     use serde_json::Value;
     use std::net::SocketAddr;
     use tower::ServiceExt;
@@ -1833,5 +1838,260 @@ mod tests {
 
         assert_eq!(json["count"], 3);
         assert_eq!(json["total"], 3);
+    }
+
+    // -- HB-017: Request detail tests --
+
+    // AC-1: Full request detail with all fields
+    #[tokio::test]
+    async fn get_request_detail_returns_all_fields() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Detail").await;
+
+        // Ingest a request with a JSON body and custom header
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .header("content-type", "application/json")
+                    .header("x-custom", "test-value")
+                    .body(axum::body::Body::from(r#"{"event": "push"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ingest_body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let ingest_json: Value = serde_json::from_slice(&ingest_body).unwrap();
+        let request_id = ingest_json["request_id"].as_str().unwrap();
+
+        // Fetch the detail
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests/{request_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["request_id"], request_id);
+        assert_eq!(json["hook_id"], hook_id);
+        assert_eq!(json["method"], "POST");
+        assert!(json["path"].as_str().unwrap().contains(&hook_id));
+        assert!(json["headers"].is_object());
+        assert_eq!(json["headers"]["x-custom"], "test-value");
+        assert!(json["content_length"].is_number());
+        assert!(json["source_ip"].is_string());
+        assert!(json["received_at"].is_number());
+
+        // Body is base64 encoded
+        let body_b64 = json["body"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(body_b64)
+            .unwrap();
+        assert_eq!(decoded, br#"{"event": "push"}"#);
+    }
+
+    // AC-2: Request not found returns 404
+    #[tokio::test]
+    async fn get_request_detail_not_found() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "No Req").await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests/nonexistent"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].as_str().unwrap().contains("not found"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-3: Nonexistent hook returns 404
+    #[tokio::test]
+    async fn get_request_detail_nonexistent_hook_404() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks/nonexistent/requests/any-id")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].as_str().unwrap().contains("not found"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-4: Binary body is base64-encoded and decodable
+    #[tokio::test]
+    async fn get_request_detail_binary_body_base64() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Binary").await;
+
+        let binary_data: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x80, 0x01, 0x02, 0x03];
+
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .header("content-type", "application/octet-stream")
+                    .body(axum::body::Body::from(binary_data.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ingest_body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let ingest_json: Value = serde_json::from_slice(&ingest_body).unwrap();
+        let request_id = ingest_json["request_id"].as_str().unwrap();
+
+        // Fetch detail
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests/{request_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        let body_b64 = json["body"].as_str().unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(body_b64)
+            .unwrap();
+        assert_eq!(decoded, binary_data);
+    }
+
+    // AC-5: Empty body returns empty base64 string
+    #[tokio::test]
+    async fn get_request_detail_empty_body() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Empty Body").await;
+
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ingest_body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let ingest_json: Value = serde_json::from_slice(&ingest_body).unwrap();
+        let request_id = ingest_json["request_id"].as_str().unwrap();
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests/{request_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["body"], "");
+        assert_eq!(json["content_length"], 0);
+    }
+
+    // AC-6: Headers preserved as JSON object
+    #[tokio::test]
+    async fn get_request_detail_headers_preserved() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Headers").await;
+
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .header("x-first", "alpha")
+                    .header("x-second", "beta")
+                    .header("content-type", "text/plain")
+                    .body(axum::body::Body::from("data"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ingest_body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let ingest_json: Value = serde_json::from_slice(&ingest_body).unwrap();
+        let request_id = ingest_json["request_id"].as_str().unwrap();
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests/{request_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        let headers = &json["headers"];
+        assert!(headers.is_object());
+        assert_eq!(headers["x-first"], "alpha");
+        assert_eq!(headers["x-second"], "beta");
+        assert_eq!(headers["content-type"], "text/plain");
     }
 }

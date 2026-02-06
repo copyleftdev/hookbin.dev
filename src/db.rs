@@ -360,6 +360,46 @@ impl Database {
         Ok(results)
     }
 
+    /// Get a single captured request by hook_id and request_id.
+    pub fn get_request(
+        &self,
+        hook_id: &str,
+        request_id: &str,
+    ) -> Result<CapturedRequest, AppError> {
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT request_id, hook_id, method, path, headers, body, content_length, source_ip, received_at
+             FROM requests
+             WHERE hook_id = ?1 AND request_id = ?2",
+            params![hook_id, request_id],
+            |row| {
+                let headers_json: String = row.get(4)?;
+                let headers: HashMap<String, String> =
+                    serde_json::from_str(&headers_json).unwrap_or_default();
+
+                Ok(CapturedRequest {
+                    request_id: row.get(0)?,
+                    hook_id: row.get(1)?,
+                    method: row.get(2)?,
+                    path: row.get(3)?,
+                    headers,
+                    body: row.get(5)?,
+                    content_length: row.get(6)?,
+                    source_ip: row.get(7)?,
+                    received_at: row.get(8)?,
+                })
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                AppError::NotFound(format!("request '{request_id}' not found in hook '{hook_id}'"))
+            }
+            other => AppError::Internal(format!(
+                "failed to get request '{request_id}' for hook '{hook_id}': {other}"
+            )),
+        })
+    }
+
     /// Count total requests for a hook.
     pub fn count_requests(&self, hook_id: &str) -> Result<u32, AppError> {
         let conn = self.lock()?;
@@ -940,6 +980,52 @@ mod tests {
 
         assert_eq!(db.list_requests("h1", 10).unwrap().len(), 1);
         assert_eq!(db.list_requests("h2", 10).unwrap().len(), 3); // untouched
+    }
+
+    // HB-017: get_request returns full request detail
+    #[test]
+    fn get_request_round_trips() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Detail")).unwrap();
+        let req = make_request("r1", "h1");
+        db.insert_request(&req).unwrap();
+
+        let fetched = db.get_request("h1", "r1").unwrap();
+        assert_eq!(fetched.request_id, "r1");
+        assert_eq!(fetched.hook_id, "h1");
+        assert_eq!(fetched.method, "POST");
+        assert_eq!(fetched.path, "/webhook");
+        assert_eq!(
+            fetched.headers.get("content-type").unwrap(),
+            "application/json"
+        );
+        assert_eq!(fetched.body, b"hello world");
+        assert_eq!(fetched.content_length, 11);
+        assert_eq!(fetched.source_ip, "192.168.1.1");
+    }
+
+    // HB-017: get_request returns NotFound for wrong request_id
+    #[test]
+    fn get_request_not_found() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Missing Req")).unwrap();
+
+        let err = db.get_request("h1", "nonexistent").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {msg}");
+    }
+
+    // HB-017: get_request returns NotFound when request exists on different hook
+    #[test]
+    fn get_request_wrong_hook() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Hook 1")).unwrap();
+        db.insert_hook(&make_hook("h2", "Hook 2")).unwrap();
+        db.insert_request(&make_request("r1", "h1")).unwrap();
+
+        let err = db.get_request("h2", "r1").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {msg}");
     }
 
     // Index existence check

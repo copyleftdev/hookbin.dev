@@ -1,0 +1,90 @@
+{
+  "id": "HB-017",
+  "title": "Request detail endpoint (GET /api/hooks/{id}/requests/{rid})",
+  "type": "story",
+  "status": "done",
+  "priority": "high",
+  "labels": ["story", "priority:high", "api"],
+  "milestone": "M2: API",
+  "epic": "HB-013",
+  "depends_on": ["HB-016"],
+  "blocks": [],
+  "user_story": "As a user, I need to inspect the full details of a captured webhook request — including headers and body — so I can debug integrations.",
+  "description": "Implement GET /api/hooks/{id}/requests/{rid} to return the full detail of a single captured request. Includes all fields: request_id, hook_id, method, path, headers (as JSON object), body (base64-encoded for binary safety), content_length, source_ip, and received_at. A new database method get_request() fetches a single request by hook_id and request_id. Returns 404 if the hook or request doesn't exist. Body is returned as base64 string to safely handle binary payloads in JSON.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a hook with a captured POST request containing JSON body and custom headers",
+      "when": "sending GET /api/hooks/{hook_id}/requests/{request_id}",
+      "then": "response is 200 with full request detail: request_id, hook_id, method, path, headers, body (base64), content_length, source_ip, received_at"
+    },
+    {
+      "id": "AC-2",
+      "given": "a hook exists but the request_id doesn't exist",
+      "when": "sending GET /api/hooks/{hook_id}/requests/nonexistent",
+      "then": "response is 404 with structured JSON error and suggestion"
+    },
+    {
+      "id": "AC-3",
+      "given": "no hook with hook_id 'nonexistent'",
+      "when": "sending GET /api/hooks/nonexistent/requests/any-id",
+      "then": "response is 404 with structured JSON error"
+    },
+    {
+      "id": "AC-4",
+      "given": "a captured request with binary (non-UTF-8) body",
+      "when": "fetching the request detail",
+      "then": "the body field is base64-encoded and can be decoded back to the original bytes"
+    },
+    {
+      "id": "AC-5",
+      "given": "a captured request with an empty body",
+      "when": "fetching the request detail",
+      "then": "the body field is an empty base64 string and content_length is 0"
+    },
+    {
+      "id": "AC-6",
+      "given": "a captured request with multiple headers",
+      "when": "fetching the request detail",
+      "then": "all headers are present as a JSON object with string keys and string values"
+    },
+    {
+      "id": "AC-7",
+      "given": "this feature",
+      "when": "running cargo test",
+      "then": "integration tests verify full detail, 404 cases, binary body base64, empty body, and header preservation"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "serde_json", "base64"],
+    "files": ["src/db.rs", "src/handlers/requests.rs", "src/server.rs"],
+    "functions": [
+      {
+        "name": "get_request",
+        "signature": "pub fn get_request(&self, hook_id: &str, request_id: &str) -> Result<CapturedRequest, AppError>",
+        "description": "Fetch a single captured request by hook_id and request_id"
+      },
+      {
+        "name": "get_request_handler",
+        "signature": "pub async fn get_request(State(state): State<AppState>, Path((hook_id, request_id)): Path<(String, String)>) -> Result<impl IntoResponse, AppError>",
+        "description": "GET /api/hooks/{id}/requests/{rid} — full request detail with base64 body"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 5,
+      "throughput_per_second": 5000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "base64 crate is already a transitive dependency. Body stored as BLOB, encoded to base64 only in the response. Single-row lookup by primary key is O(1)."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}
