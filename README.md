@@ -125,7 +125,7 @@ Everything is bounded. Nothing grows without limit.
 ```bash
 # Prerequisites: Rust stable toolchain
 git clone https://github.com/copyleftdev/hookbin.dev.git
-cd hookbin.dev
+cd hook-bin.dev
 
 # Development
 cargo build             # Debug build

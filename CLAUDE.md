@@ -272,10 +272,10 @@ impl IntoResponse for AppError {
 
 ```bash
 # Install (one-liner)
-curl -fsSL https://hookbin.dev/install | sh
+curl -fsSL https://hook-bin.dev/install | sh
 
 # Or just download the binary
-wget https://hookbin.dev/releases/hookbin-linux-amd64
+wget https://hook-bin.dev/releases/hookbin-linux-amd64
 chmod +x hookbin-linux-amd64
 ./hookbin-linux-amd64 serve
 
@@ -289,7 +289,7 @@ chmod +x hookbin-linux-amd64
 ## File Structure
 
 ```text
-hookbin.dev/
+hook-bin.dev/
 ├── CLAUDE.md                 # This file — read it
 ├── .claude/                  # AI config
 │   ├── settings.json

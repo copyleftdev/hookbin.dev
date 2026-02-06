@@ -2,7 +2,7 @@
   "project": {
     "name": "Hookbin",
     "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
-    "domain": "hookbin.dev",
+    "domain": "hook-bin.dev",
     "language": "Rust (stable)"
   },
   "absolute_requirements": {

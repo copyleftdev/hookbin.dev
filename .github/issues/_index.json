@@ -1,5 +1,5 @@
 {
-  "project": "hookbin.dev",
+  "project": "hook-bin.dev",
   "prefix": "HB",
   "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
   "total_issues": 23,
