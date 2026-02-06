@@ -310,6 +310,71 @@ impl Database {
         Ok(results)
     }
 
+    /// List captured requests for a hook with offset-based pagination, newest first.
+    pub fn list_requests_paginated(
+        &self,
+        hook_id: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<CapturedRequest>, AppError> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT request_id, hook_id, method, path, headers, body, content_length, source_ip, received_at
+                 FROM requests
+                 WHERE hook_id = ?1
+                 ORDER BY received_at DESC
+                 LIMIT ?2 OFFSET ?3",
+            )
+            .map_err(|e| AppError::Internal(format!("failed to prepare query: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![hook_id, limit, offset], |row| {
+                let headers_json: String = row.get(4)?;
+                let headers: HashMap<String, String> =
+                    serde_json::from_str(&headers_json).unwrap_or_default();
+
+                Ok(CapturedRequest {
+                    request_id: row.get(0)?,
+                    hook_id: row.get(1)?,
+                    method: row.get(2)?,
+                    path: row.get(3)?,
+                    headers,
+                    body: row.get(5)?,
+                    content_length: row.get(6)?,
+                    source_ip: row.get(7)?,
+                    received_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| {
+                AppError::Internal(format!("failed to list requests for hook '{hook_id}': {e}"))
+            })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(
+                row.map_err(|e| AppError::Internal(format!("failed to read request row: {e}")))?,
+            );
+        }
+
+        Ok(results)
+    }
+
+    /// Count total requests for a hook.
+    pub fn count_requests(&self, hook_id: &str) -> Result<u32, AppError> {
+        let conn = self.lock()?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM requests WHERE hook_id = ?1",
+            params![hook_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "failed to count requests for hook '{hook_id}': {e}"
+            ))
+        })
+    }
+
     /// Delete oldest requests for a hook, keeping only the newest `keep` requests.
     /// Returns the number of deleted requests.
     /// Also updates the hook's request_count to reflect the deletion.
@@ -755,6 +820,55 @@ mod tests {
         db.insert_hook(&make_hook("h2", "Hook 2")).unwrap();
         db.insert_hook(&make_hook("h3", "Hook 3")).unwrap();
         assert_eq!(db.count_hooks().unwrap(), 3);
+    }
+
+    // HB-016: count_requests
+    #[test]
+    fn count_requests_empty_hook() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Empty")).unwrap();
+        assert_eq!(db.count_requests("h1").unwrap(), 0);
+    }
+
+    #[test]
+    fn count_requests_after_inserts() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Counter")).unwrap();
+        for i in 0..3 {
+            let mut req = make_request(&format!("r{i}"), "h1");
+            req.received_at = 1000 + i as i64;
+            db.insert_request(&req).unwrap();
+        }
+        assert_eq!(db.count_requests("h1").unwrap(), 3);
+    }
+
+    // HB-016: list_requests_paginated with offset
+    #[test]
+    fn list_requests_paginated_with_offset() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Paginated")).unwrap();
+
+        for i in 0..5 {
+            let mut req = make_request(&format!("r{i}"), "h1");
+            req.received_at = 1000 + i as i64;
+            db.insert_request(&req).unwrap();
+        }
+
+        // Skip 2, take 2 (from newest-first ordering: r4, r3, r2, r1, r0)
+        let results = db.list_requests_paginated("h1", 2, 2).unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].request_id, "r2");
+        assert_eq!(results[1].request_id, "r1");
+    }
+
+    #[test]
+    fn list_requests_paginated_offset_beyond_end() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Beyond")).unwrap();
+        db.insert_request(&make_request("r1", "h1")).unwrap();
+
+        let results = db.list_requests_paginated("h1", 10, 100).unwrap();
+        assert!(results.is_empty());
     }
 
     // HB-012 AC-6: delete_oldest_requests evicts oldest, preserves newest

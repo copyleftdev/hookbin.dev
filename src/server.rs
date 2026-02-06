@@ -41,6 +41,10 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(handlers::hooks::delete_hook),
         )
         .route(
+            "/api/hooks/{hook_id}/requests",
+            axum::routing::get(handlers::requests::list_requests),
+        )
+        .route(
             "/h/{hook_id}",
             axum::routing::any(handlers::ingest::ingest_webhook),
         )
@@ -1538,5 +1542,296 @@ mod tests {
         let json: Value = serde_json::from_slice(&body).unwrap();
 
         assert_eq!(json["request_count"], 3);
+    }
+
+    // -- HB-016: List captured requests tests --
+
+    /// Helper: ingest N requests to a hook, returning their request_ids.
+    async fn ingest_n_requests(state: &AppState, hook_id: &str, n: usize) -> Vec<String> {
+        let mut ids = Vec::new();
+        for i in 0..n {
+            let app = build_test_router(state.clone());
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/h/{hook_id}"))
+                        .body(axum::body::Body::from(format!("payload-{i}")))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+            let json: Value = serde_json::from_slice(&body).unwrap();
+            ids.push(json["request_id"].as_str().unwrap().to_owned());
+        }
+        ids
+    }
+
+    // AC-1: List requests returns all with count and total
+    #[tokio::test]
+    async fn list_requests_returns_all() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "List Req").await;
+        ingest_n_requests(&state, &hook_id, 5).await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 5);
+        assert_eq!(json["total"], 5);
+        assert_eq!(json["requests"].as_array().unwrap().len(), 5);
+    }
+
+    // AC-2: Pagination with limit and offset
+    #[tokio::test]
+    async fn list_requests_pagination() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Paginated").await;
+
+        // Insert 10 requests with distinct timestamps via DB directly
+        for i in 0..10 {
+            use crate::models::CapturedRequest;
+            use std::collections::HashMap;
+            let req = CapturedRequest {
+                request_id: format!("req-{i:02}"),
+                hook_id: hook_id.clone(),
+                method: "POST".to_owned(),
+                path: format!("/h/{hook_id}"),
+                headers: HashMap::new(),
+                body: vec![],
+                content_length: 0,
+                source_ip: "127.0.0.1".to_owned(),
+                received_at: 1000 + i as i64,
+            };
+            state.db.insert_request(&req).unwrap();
+        }
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests?limit=3&offset=2"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 3);
+        assert_eq!(json["total"], 10);
+
+        // Newest first: req-09, req-08, req-07, req-06, ...
+        // Offset 2 skips req-09 and req-08, so we get req-07, req-06, req-05
+        let requests = json["requests"].as_array().unwrap();
+        assert_eq!(requests[0]["request_id"], "req-07");
+        assert_eq!(requests[1]["request_id"], "req-06");
+        assert_eq!(requests[2]["request_id"], "req-05");
+    }
+
+    // AC-3: Summary fields only — no body or headers
+    #[tokio::test]
+    async fn list_requests_summary_fields_only() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Summary").await;
+        ingest_n_requests(&state, &hook_id, 1).await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        let req = &json["requests"][0];
+        // Should have summary fields
+        assert!(req["request_id"].is_string());
+        assert!(req["method"].is_string());
+        assert!(req["path"].is_string());
+        assert!(req["content_length"].is_number());
+        assert!(req["source_ip"].is_string());
+        assert!(req["received_at"].is_number());
+        // Should NOT have body or headers
+        assert!(req.get("body").is_none(), "body should not be in summary");
+        assert!(
+            req.get("headers").is_none(),
+            "headers should not be in summary"
+        );
+    }
+
+    // AC-4: Empty requests list
+    #[tokio::test]
+    async fn list_requests_empty() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Empty Req").await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 0);
+        assert_eq!(json["total"], 0);
+        assert!(json["requests"].as_array().unwrap().is_empty());
+    }
+
+    // AC-5: Nonexistent hook returns 404
+    #[tokio::test]
+    async fn list_requests_nonexistent_hook_404() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks/nonexistent/requests")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].as_str().unwrap().contains("not found"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-6: Limit clamped to 200
+    #[tokio::test]
+    async fn list_requests_limit_clamped() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Clamp").await;
+        ingest_n_requests(&state, &hook_id, 1).await;
+
+        // Request with limit=500 — should not error, just clamp
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests?limit=500"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        // Should still work, returning the 1 request
+        assert_eq!(json["count"], 1);
+    }
+
+    // AC-7: Requests ordered newest first
+    #[tokio::test]
+    async fn list_requests_ordered_newest_first() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Ordered").await;
+
+        // Insert with distinct timestamps
+        for i in 0..3 {
+            use crate::models::CapturedRequest;
+            use std::collections::HashMap;
+            let req = CapturedRequest {
+                request_id: format!("ord-{i}"),
+                hook_id: hook_id.clone(),
+                method: "GET".to_owned(),
+                path: format!("/h/{hook_id}"),
+                headers: HashMap::new(),
+                body: vec![],
+                content_length: 0,
+                source_ip: "10.0.0.1".to_owned(),
+                received_at: 1000 + i as i64,
+            };
+            state.db.insert_request(&req).unwrap();
+        }
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        let requests = json["requests"].as_array().unwrap();
+        assert_eq!(requests[0]["request_id"], "ord-2"); // newest
+        assert_eq!(requests[1]["request_id"], "ord-1");
+        assert_eq!(requests[2]["request_id"], "ord-0"); // oldest
+    }
+
+    // AC-6 edge: Default limit (no param) returns up to 50
+    #[tokio::test]
+    async fn list_requests_default_limit() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Default Limit").await;
+        ingest_n_requests(&state, &hook_id, 3).await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}/requests"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 3);
+        assert_eq!(json["total"], 3);
     }
 }
