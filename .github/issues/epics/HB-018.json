@@ -1,0 +1,23 @@
+{
+  "id": "HB-018",
+  "type": "epic",
+  "title": "M3: Dashboard — embedded web UI, hook list, request feed, request inspector",
+  "status": "open",
+  "milestone": "M3: Dashboard",
+  "children": ["HB-019", "HB-020", "HB-021", "HB-022", "HB-023"],
+  "description": "Embedded web dashboard served from the single binary. Vanilla SPA with hash routing, dark theme, developer-oriented UI. No npm, no build tools, no framework.",
+  "in_scope": [
+    "rust-embed asset serving with SPA fallback",
+    "Dashboard shell with layout, styling, hash router",
+    "Hook list view: display, create, delete hooks",
+    "Request feed: paginated request list per hook",
+    "Request inspector: full detail with headers and body"
+  ],
+  "out_of_scope": [
+    "Rate limiting UI",
+    "Token/auth management UI",
+    "Request replay UI",
+    "WebSocket live updates",
+    "Export/download functionality"
+  ]
+}

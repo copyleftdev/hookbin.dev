@@ -1,0 +1,26 @@
+{
+  "id": "HB-023",
+  "type": "story",
+  "title": "Request inspector: full detail with headers and body",
+  "status": "open",
+  "epic": "HB-018",
+  "milestone": "M3: Dashboard",
+  "points": 5,
+  "depends_on": ["HB-022"],
+  "blocks": [],
+  "labels": ["frontend", "dashboard"],
+  "description": "Implement request detail view in app.js. Show full request with summary, headers table, body display with base64 decoding, JSON pretty-printing, binary payload detection, copy buttons.",
+  "acceptance_criteria": [
+    "Fetches GET /api/hooks/{id}/requests/{rid}",
+    "Summary shows method badge, path, source IP, timestamp",
+    "Headers displayed as key-value table in monospace",
+    "Body: decode base64, auto-detect JSON for pretty-print",
+    "Binary payloads show '(binary payload, N bytes)'",
+    "Empty body shows '(empty body)'",
+    "Copy buttons for headers and body",
+    "Back link to request feed"
+  ],
+  "technical_context": {
+    "files": ["ui/assets/app.js"]
+  }
+}
