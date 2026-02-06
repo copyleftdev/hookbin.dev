@@ -16,7 +16,7 @@
     {
       "id": "HB-002",
       "title": "Initialize Cargo project with module structure",
-      "status": "ready",
+      "status": "done",
       "epic": "HB-001",
       "depends_on": [],
       "blocks": ["HB-003", "HB-004", "HB-005"],
@@ -77,7 +77,7 @@
     "HB-007": { "depends_on": ["HB-003", "HB-004", "HB-006"], "blocks": [] }
   },
   "milestone_progress": {
-    "M0: Foundation": { "total": 6, "done": 0 },
+    "M0: Foundation": { "total": 6, "done": 1 },
     "M1: Ingestion": { "total": 0, "done": 0 },
     "M2: API": { "total": 0, "done": 0 },
     "M3: Dashboard": { "total": 0, "done": 0 },
