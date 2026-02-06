@@ -2,7 +2,7 @@
   "id": "HB-005",
   "title": "Define Hook, Request, and Token data models",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "high",
   "labels": ["story", "priority:high", "storage"],
   "milestone": "M0: Foundation",
