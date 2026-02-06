@@ -2,7 +2,7 @@
   "id": "HB-006",
   "title": "SQLite database layer with WAL mode and migrations",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical", "storage"],
   "milestone": "M0: Foundation",
