@@ -1,0 +1,101 @@
+{
+  "id": "HB-003",
+  "title": "Implement AppError type with structured responses",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical"],
+  "milestone": "M0: Foundation",
+  "epic": "HB-001",
+  "depends_on": ["HB-002"],
+  "blocks": ["HB-005", "HB-006"],
+  "user_story": "As an API consumer, I need every error response to include a structured JSON body with an error message and a suggestion so I can fix the issue without guessing.",
+  "description": "Implement the AppError enum from CLAUDE.md using thiserror. Implement IntoResponse for Axum so every variant maps to the correct HTTP status code and returns a JSON body with `error`, `status`, and `suggestion` fields. No error is ever swallowed.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "any AppError variant",
+      "when": "converted to an Axum response",
+      "then": "the HTTP status code matches (404, 400, 429, 413, 500) and the body is JSON with `error`, `status`, and `suggestion` fields"
+    },
+    {
+      "id": "AC-2",
+      "given": "an AppError::NotFound",
+      "when": "serialized",
+      "then": "status is 404 and suggestion is 'Check the hook ID and try again'"
+    },
+    {
+      "id": "AC-3",
+      "given": "an AppError::RateLimited",
+      "when": "serialized",
+      "then": "status is 429 and suggestion is 'Wait and retry, or increase your rate limit'"
+    },
+    {
+      "id": "AC-4",
+      "given": "an AppError::PayloadTooLarge with size and max",
+      "when": "serialized",
+      "then": "status is 413, error message includes the size and max, and suggestion mentions --max-payload"
+    },
+    {
+      "id": "AC-5",
+      "given": "an AppError::Internal",
+      "when": "serialized",
+      "then": "status is 500 and suggestion is 'This is a bug — please report it'"
+    },
+    {
+      "id": "AC-6",
+      "given": "an AppError::InvalidInput",
+      "when": "serialized",
+      "then": "status is 400 and the error message describes the invalid input"
+    },
+    {
+      "id": "AC-7",
+      "given": "this module",
+      "when": "running `cargo test`",
+      "then": "unit tests verify every variant's status code, JSON structure, and suggestion text"
+    }
+  ],
+  "technical_context": {
+    "crates": ["thiserror", "axum", "serde_json"],
+    "files": ["src/error.rs"],
+    "functions": [
+      {
+        "name": "AppError::NotFound",
+        "signature": "NotFound(String)",
+        "description": "Resource not found — 404"
+      },
+      {
+        "name": "AppError::InvalidInput",
+        "signature": "InvalidInput(String)",
+        "description": "Bad user input — 400"
+      },
+      {
+        "name": "AppError::RateLimited",
+        "signature": "RateLimited",
+        "description": "Rate limit exceeded — 429"
+      },
+      {
+        "name": "AppError::PayloadTooLarge",
+        "signature": "PayloadTooLarge { size: usize, max: usize }",
+        "description": "Body exceeds max — 413"
+      },
+      {
+        "name": "AppError::Internal",
+        "signature": "Internal(String)",
+        "description": "Unexpected failure — 500"
+      }
+    ]
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Pure in-process logic. No IO."
+  },
+  "estimate": {
+    "points": 2,
+    "confidence": "high"
+  }
+}

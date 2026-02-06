@@ -1,0 +1,45 @@
+{
+  "id": "HB-001",
+  "title": "M0: Foundation — project skeleton, error types, config, DB, server",
+  "type": "epic",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["epic", "priority:critical"],
+  "milestone": "M0: Foundation",
+  "description": "Bootstrap the Hookbin project from zero to a running binary that starts an Axum server, connects to SQLite in WAL mode, parses CLI flags, and responds to a health check. Every subsequent milestone depends on this foundation being solid.",
+  "goals": [
+    "cargo build produces a single binary",
+    "cargo test passes with foundational tests",
+    "Binary starts, binds a port, serves /health",
+    "SQLite database initializes with schema in WAL mode",
+    "All errors flow through a single AppError type with user-facing suggestions",
+    "CLI flags and optional TOML config are parsed"
+  ],
+  "children": ["HB-002", "HB-003", "HB-004", "HB-005", "HB-006", "HB-007"],
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a clean checkout of the repo",
+      "when": "running `cargo build`",
+      "then": "a single `hookbin` binary is produced with zero warnings"
+    },
+    {
+      "id": "AC-2",
+      "given": "the built binary",
+      "when": "running `./hookbin serve --port 8080`",
+      "then": "the server starts, creates a SQLite database in WAL mode, and responds 200 on GET /health"
+    },
+    {
+      "id": "AC-3",
+      "given": "the project",
+      "when": "running `cargo test`",
+      "then": "all foundation tests pass"
+    }
+  ],
+  "out_of_scope": [
+    "Webhook ingestion (M1)",
+    "Hook CRUD API (M2)",
+    "Dashboard UI (M3)",
+    "Rate limiting and retention (M4)"
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "project": "hookbin.dev",
+  "prefix": "HB",
+  "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
+  "total_issues": 7,
+  "epics": [
+    {
+      "id": "HB-001",
+      "title": "M0: Foundation — project skeleton, error types, config, DB, server",
+      "status": "ready",
+      "children": ["HB-002", "HB-003", "HB-004", "HB-005", "HB-006", "HB-007"],
+      "file": "epics/HB-001.json"
+    }
+  ],
+  "stories": [
+    {
+      "id": "HB-002",
+      "title": "Initialize Cargo project with module structure",
+      "status": "ready",
+      "epic": "HB-001",
+      "depends_on": [],
+      "blocks": ["HB-003", "HB-004", "HB-005"],
+      "file": "stories/m0-foundation/HB-002.json"
+    },
+    {
+      "id": "HB-003",
+      "title": "Implement AppError type with structured responses",
+      "status": "ready",
+      "epic": "HB-001",
+      "depends_on": ["HB-002"],
+      "blocks": ["HB-005", "HB-006"],
+      "file": "stories/m0-foundation/HB-003.json"
+    },
+    {
+      "id": "HB-004",
+      "title": "CLI argument parsing and TOML config loading",
+      "status": "ready",
+      "epic": "HB-001",
+      "depends_on": ["HB-002"],
+      "blocks": ["HB-006"],
+      "file": "stories/m0-foundation/HB-004.json"
+    },
+    {
+      "id": "HB-005",
+      "title": "Define Hook, Request, and Token data models",
+      "status": "ready",
+      "epic": "HB-001",
+      "depends_on": ["HB-002", "HB-003"],
+      "blocks": ["HB-006"],
+      "file": "stories/m0-foundation/HB-005.json"
+    },
+    {
+      "id": "HB-006",
+      "title": "SQLite database layer with WAL mode and migrations",
+      "status": "ready",
+      "epic": "HB-001",
+      "depends_on": ["HB-003", "HB-004", "HB-005"],
+      "blocks": ["HB-007"],
+      "file": "stories/m0-foundation/HB-006.json"
+    },
+    {
+      "id": "HB-007",
+      "title": "Axum server skeleton with health check endpoint",
+      "status": "ready",
+      "epic": "HB-001",
+      "depends_on": ["HB-003", "HB-004", "HB-006"],
+      "blocks": [],
+      "file": "stories/m0-foundation/HB-007.json"
+    }
+  ],
+  "dependency_graph": {
+    "HB-002": { "depends_on": [], "blocks": ["HB-003", "HB-004", "HB-005"] },
+    "HB-003": { "depends_on": ["HB-002"], "blocks": ["HB-005", "HB-006"] },
+    "HB-004": { "depends_on": ["HB-002"], "blocks": ["HB-006"] },
+    "HB-005": { "depends_on": ["HB-002", "HB-003"], "blocks": ["HB-006"] },
+    "HB-006": { "depends_on": ["HB-003", "HB-004", "HB-005"], "blocks": ["HB-007"] },
+    "HB-007": { "depends_on": ["HB-003", "HB-004", "HB-006"], "blocks": [] }
+  },
+  "milestone_progress": {
+    "M0: Foundation": { "total": 6, "done": 0 },
+    "M1: Ingestion": { "total": 0, "done": 0 },
+    "M2: API": { "total": 0, "done": 0 },
+    "M3: Dashboard": { "total": 0, "done": 0 },
+    "M4: Operations": { "total": 0, "done": 0 },
+    "M5: Hardening": { "total": 0, "done": 0 }
+  }
+}

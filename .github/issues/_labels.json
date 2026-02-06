@@ -1,0 +1,84 @@
+{
+  "labels": [
+    {
+      "name": "epic",
+      "color": "5319E7",
+      "description": "Large feature or initiative"
+    },
+    {
+      "name": "story",
+      "color": "0075CA",
+      "description": "User-facing feature"
+    },
+    {
+      "name": "task",
+      "color": "006B75",
+      "description": "Technical task"
+    },
+    {
+      "name": "bug",
+      "color": "D73A4A",
+      "description": "Something isn't working"
+    },
+    {
+      "name": "spike",
+      "color": "FBCA04",
+      "description": "Research or investigation"
+    },
+    {
+      "name": "ingestion",
+      "color": "0E8A16",
+      "description": "Webhook capture and storage"
+    },
+    {
+      "name": "api",
+      "color": "1D76DB",
+      "description": "Management REST API"
+    },
+    {
+      "name": "dashboard",
+      "color": "C5DEF5",
+      "description": "Embedded web UI"
+    },
+    {
+      "name": "storage",
+      "color": "006B75",
+      "description": "SQLite and data layer"
+    },
+    {
+      "name": "operations",
+      "color": "FF6F00",
+      "description": "Retention, rate limiting, config"
+    },
+    {
+      "name": "security",
+      "color": "B60205",
+      "description": "Auth and access control"
+    },
+    {
+      "name": "performance",
+      "color": "0E8A16",
+      "description": "Speed and resource efficiency"
+    },
+    {
+      "name": "priority:critical",
+      "color": "B60205",
+      "description": "Must be done immediately"
+    },
+    {
+      "name": "priority:high",
+      "color": "D93F0B",
+      "description": "Important, do soon"
+    },
+    {
+      "name": "priority:medium",
+      "color": "FBCA04",
+      "description": "Normal priority"
+    },
+    {
+      "name": "priority:low",
+      "color": "0E8A16",
+      "description": "Nice to have"
+    }
+  ]
+}

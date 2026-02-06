@@ -1,0 +1,63 @@
+{
+  "project": {
+    "name": "Hookbin",
+    "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
+    "domain": "hookbin.dev",
+    "language": "Rust (stable)"
+  },
+  "absolute_requirements": {
+    "single_binary": "ONE binary, no external databases, no external services",
+    "tigerbeetle_philosophy": "Deterministic resources, crash-safe, pre-allocated, bounded",
+    "no_silent_failure": "Every error handled, logged, and includes user suggestion",
+    "tests_required": "cargo test is the only gate — success, failure, edge cases"
+  },
+  "context": {
+    "always_read": ["CLAUDE.md"]
+  },
+  "code": {
+    "rust": {
+      "edition": "2021",
+      "style": "clear > clever, no .unwrap() outside tests, no unsafe",
+      "errors": "thiserror + structured AppError with suggestions",
+      "logging": "tracing crate"
+    },
+    "comments": "WHY only, never WHAT",
+    "errors": "structured with suggestion field"
+  },
+  "naming": {
+    "hook_id": "nanoid (e.g., abc123xyz)",
+    "request_id": "UUID v4",
+    "endpoints": {
+      "ingest": "/h/{hook_id}",
+      "api": "/api/hooks, /api/hooks/{id}/requests",
+      "dashboard": "/"
+    }
+  },
+  "structure": {
+    "src": "all Rust source",
+    "src/handlers": "HTTP handlers (ingest, hooks, requests, dashboard, health)",
+    "src/db.rs": "SQLite connection, migrations, queries",
+    "src/models.rs": "domain types",
+    "ui": "dashboard assets (embedded into binary)"
+  },
+  "constraints": {
+    "max_hooks": 100,
+    "max_payload_bytes": 1048576,
+    "retention_hours": 24,
+    "rate_limit_per_minute": 60,
+    "max_requests_per_hook": 1000,
+    "target_binary_size_mb": 20
+  },
+  "do_not": [
+    "add external databases",
+    "add external services",
+    "create multiple binaries",
+    "use .unwrap() outside tests",
+    "use unsafe",
+    "swallow errors",
+    "over-engineer",
+    "break single-binary promise",
+    "allow unbounded resource usage",
+    "skip tests"
+  ]
+}

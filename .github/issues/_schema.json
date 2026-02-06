@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Hookbin GitHub Issue Schema",
+  "description": "Schema for machine-readable GitHub issues with full AI comprehension support",
+  "definitions": {
+    "acceptance_criterion": {
+      "type": "object",
+      "required": ["id", "given", "when", "then"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^AC-[0-9]+$",
+          "description": "Unique identifier for this criterion"
+        },
+        "given": {
+          "type": "string",
+          "description": "Precondition or initial state"
+        },
+        "when": {
+          "type": "string",
+          "description": "Action or trigger"
+        },
+        "then": {
+          "type": "string",
+          "description": "Expected outcome (testable)"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Implementation hints or edge cases"
+        }
+      }
+    },
+    "technical_context": {
+      "type": "object",
+      "properties": {
+        "crates": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Rust crates relevant to this issue"
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Expected file paths to create/modify"
+        },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "signature": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          },
+          "description": "Key function signatures"
+        },
+        "performance_constraints": {
+          "type": "object",
+          "properties": {
+            "latency_budget_ms": { "type": "number" },
+            "throughput_per_second": { "type": "number" },
+            "memory_budget_mb": { "type": "number" }
+          }
+        }
+      }
+    },
+    "single_binary_checklist": {
+      "type": "object",
+      "properties": {
+        "no_external_db": { "type": "boolean" },
+        "no_external_services": { "type": "boolean" },
+        "resource_bounded": { "type": "boolean" },
+        "crash_safe": { "type": "boolean" },
+        "no_unwrap": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "type": "object",
+  "required": ["id", "title", "type", "status", "priority", "description", "acceptance_criteria"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^HB-[0-9]+$",
+      "description": "Unique issue identifier"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "type": {
+      "type": "string",
+      "enum": ["epic", "story", "task", "bug", "spike"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "ready", "in_progress", "review", "done", "blocked"],
+      "default": "draft"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "labels": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "milestone": {
+      "type": "string"
+    },
+    "epic": {
+      "type": "string",
+      "description": "Parent epic ID (for stories/tasks)"
+    },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "description": {
+      "type": "string"
+    },
+    "user_story": {
+      "type": "string"
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/acceptance_criterion" },
+      "minItems": 1
+    },
+    "technical_context": {
+      "$ref": "#/definitions/technical_context"
+    },
+    "single_binary_checklist": {
+      "$ref": "#/definitions/single_binary_checklist"
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "estimate": {
+      "type": "object",
+      "properties": {
+        "points": { "type": "integer", "minimum": 1, "maximum": 13 },
+        "confidence": { "type": "string", "enum": ["high", "medium", "low"] }
+      }
+    },
+    "children": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Child issue IDs (for epics)"
+    },
+    "goals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "High-level goals (for epics)"
+    }
+  }
+}

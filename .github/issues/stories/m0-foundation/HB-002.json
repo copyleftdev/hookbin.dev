@@ -1,0 +1,91 @@
+{
+  "id": "HB-002",
+  "title": "Initialize Cargo project with module structure",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical"],
+  "milestone": "M0: Foundation",
+  "epic": "HB-001",
+  "depends_on": [],
+  "blocks": ["HB-003", "HB-004", "HB-005"],
+  "user_story": "As a developer, I need the Cargo project initialized with the correct directory layout so all subsequent work has a place to land.",
+  "description": "Create the Cargo.toml with all required dependencies and set up the module structure from CLAUDE.md. This is the very first code issue — everything else depends on it. The binary should compile and print a placeholder message.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a clean checkout",
+      "when": "running `cargo build`",
+      "then": "a `hookbin` binary is produced with zero errors and zero warnings"
+    },
+    {
+      "id": "AC-2",
+      "given": "the built binary",
+      "when": "running `./hookbin --help`",
+      "then": "clap shows a help message with the `serve` subcommand"
+    },
+    {
+      "id": "AC-3",
+      "given": "the source tree",
+      "when": "inspecting the module layout",
+      "then": "all modules from CLAUDE.md exist as files (even if stubbed): main.rs, server.rs, db.rs, models.rs, error.rs, config.rs, retention.rs, rate_limit.rs, handlers/{ingest,hooks,requests,dashboard,health}.rs"
+    },
+    {
+      "id": "AC-4",
+      "given": "the project",
+      "when": "running `cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings`",
+      "then": "no formatting or lint issues"
+    }
+  ],
+  "technical_context": {
+    "crates": [
+      "axum",
+      "tokio",
+      "rusqlite (with bundled feature)",
+      "rust-embed",
+      "clap (with derive feature)",
+      "serde + serde_json",
+      "thiserror",
+      "tracing + tracing-subscriber",
+      "nanoid",
+      "uuid (with v4 feature)",
+      "tower-http (cors, trace)"
+    ],
+    "files": [
+      "Cargo.toml",
+      "src/main.rs",
+      "src/server.rs",
+      "src/db.rs",
+      "src/models.rs",
+      "src/error.rs",
+      "src/config.rs",
+      "src/retention.rs",
+      "src/rate_limit.rs",
+      "src/handlers/mod.rs",
+      "src/handlers/ingest.rs",
+      "src/handlers/hooks.rs",
+      "src/handlers/requests.rs",
+      "src/handlers/dashboard.rs",
+      "src/handlers/health.rs"
+    ],
+    "functions": [
+      {
+        "name": "main",
+        "signature": "#[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>>",
+        "description": "Entry point: parse CLI args with clap, then delegate to serve"
+      }
+    ]
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "This issue establishes the single-binary structure. rusqlite must use 'bundled' feature to compile SQLite into the binary."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}

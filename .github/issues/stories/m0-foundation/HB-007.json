@@ -1,0 +1,95 @@
+{
+  "id": "HB-007",
+  "title": "Axum server skeleton with health check endpoint",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical", "api"],
+  "milestone": "M0: Foundation",
+  "epic": "HB-001",
+  "depends_on": ["HB-003", "HB-004", "HB-006"],
+  "blocks": [],
+  "user_story": "As an operator, I need to run `./hookbin serve` and have a working HTTP server with a health check so I can verify the deployment is alive and monitoring tools can probe it.",
+  "description": "Wire everything together: main.rs parses CLI with clap, loads config, opens the database, builds the Axum router with shared AppState, and starts the Tokio server. The health check endpoint returns 200 with a JSON body including version, uptime, and database status. Structured logging with tracing is initialized. This is the 'it boots' milestone — after this, `cargo run -- serve` produces a working server.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "the built binary",
+      "when": "running `./hookbin serve --port 8080`",
+      "then": "the server starts, logs a startup message with the bound address, and accepts connections"
+    },
+    {
+      "id": "AC-2",
+      "given": "a running server",
+      "when": "sending `GET /health`",
+      "then": "the response is 200 with JSON body: `{\"status\": \"ok\", \"version\": \"<cargo version>\", \"uptime_seconds\": <n>}`"
+    },
+    {
+      "id": "AC-3",
+      "given": "a running server",
+      "when": "sending a request to an undefined route",
+      "then": "the response is 404 with a structured JSON error (not Axum's default plain text)"
+    },
+    {
+      "id": "AC-4",
+      "given": "the server starting",
+      "when": "tracing is initialized",
+      "then": "structured log output includes timestamp, level, and message fields"
+    },
+    {
+      "id": "AC-5",
+      "given": "the AppState struct",
+      "when": "inspected",
+      "then": "it holds the Database, Config, and a start_time for uptime calculation"
+    },
+    {
+      "id": "AC-6",
+      "given": "Ctrl+C or SIGTERM",
+      "when": "the server is running",
+      "then": "graceful shutdown occurs and the process exits cleanly"
+    },
+    {
+      "id": "AC-7",
+      "given": "this module",
+      "when": "running `cargo test`",
+      "then": "integration test uses axum::test to verify the health endpoint returns 200 with expected JSON structure"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "tokio", "tower-http (trace)", "tracing", "tracing-subscriber"],
+    "files": ["src/main.rs", "src/server.rs", "src/handlers/health.rs", "src/handlers/mod.rs"],
+    "functions": [
+      {
+        "name": "build_router",
+        "signature": "pub fn build_router(state: AppState) -> Router",
+        "description": "Construct the Axum router with all routes and shared state"
+      },
+      {
+        "name": "health_check",
+        "signature": "pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse",
+        "description": "Returns 200 with status, version, uptime"
+      },
+      {
+        "name": "AppState",
+        "signature": "pub struct AppState { pub db: Arc<Database>, pub config: Arc<Config>, pub start_time: Instant }",
+        "description": "Shared server state passed to all handlers"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 1,
+      "throughput_per_second": 10000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Server binds to a single port. Graceful shutdown via tokio signal. No external dependencies."
+  },
+  "estimate": {
+    "points": 5,
+    "confidence": "high"
+  }
+}

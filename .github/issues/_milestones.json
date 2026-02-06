@@ -1,0 +1,28 @@
+{
+  "milestones": [
+    {
+      "title": "M0: Foundation",
+      "description": "Cargo project, CLI skeleton, SQLite schema, embedded migrations, config, error types"
+    },
+    {
+      "title": "M1: Ingestion",
+      "description": "Webhook capture endpoint, request storage, payload size limits"
+    },
+    {
+      "title": "M2: API",
+      "description": "Hook CRUD, request listing, request inspection, health check"
+    },
+    {
+      "title": "M3: Dashboard",
+      "description": "Embedded web UI, hook list, request feed, request inspector"
+    },
+    {
+      "title": "M4: Operations",
+      "description": "Rate limiting, retention cleanup, replay, configuration"
+    },
+    {
+      "title": "M5: Hardening",
+      "description": "Security, crash safety testing, binary size optimization, release pipeline"
+    }
+  ]
+}

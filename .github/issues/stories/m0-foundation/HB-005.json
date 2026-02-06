@@ -1,0 +1,74 @@
+{
+  "id": "HB-005",
+  "title": "Define Hook, Request, and Token data models",
+  "type": "story",
+  "status": "ready",
+  "priority": "high",
+  "labels": ["story", "priority:high", "storage"],
+  "milestone": "M0: Foundation",
+  "epic": "HB-001",
+  "depends_on": ["HB-002", "HB-003"],
+  "blocks": ["HB-006"],
+  "user_story": "As a developer, I need well-typed data models for hooks, captured requests, and auth tokens so the rest of the codebase can pass structured data instead of raw strings.",
+  "description": "Define the core domain types from CLAUDE.md: Hook (a named webhook inbox), Request (a captured HTTP request), and Token (optional auth). These are plain structs with serde Serialize/Deserialize. IDs use nanoid for hooks and UUID v4 for requests. Include Display and test coverage.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "the Hook struct",
+      "when": "a new hook is created",
+      "then": "it has a nanoid hook_id, a name, created_at timestamp, and request_count field"
+    },
+    {
+      "id": "AC-2",
+      "given": "the Request struct",
+      "when": "a webhook is captured",
+      "then": "it stores request_id (UUID v4), hook_id, method, url path, headers (as JSON), body (bytes), content_length, source IP, and received_at timestamp"
+    },
+    {
+      "id": "AC-3",
+      "given": "the Token struct",
+      "when": "an auth token is created",
+      "then": "it has a token_id, hook_id (optional — can be global), created_at, and expires_at"
+    },
+    {
+      "id": "AC-4",
+      "given": "any model",
+      "when": "serialized to JSON",
+      "then": "serde produces the expected fields with snake_case naming"
+    },
+    {
+      "id": "AC-5",
+      "given": "this module",
+      "when": "running `cargo test`",
+      "then": "tests verify creation, serialization round-trip, and field constraints"
+    }
+  ],
+  "technical_context": {
+    "crates": ["serde", "serde_json", "nanoid", "uuid (v4)", "chrono or time"],
+    "files": ["src/models.rs"],
+    "functions": [
+      {
+        "name": "Hook::new",
+        "signature": "pub fn new(name: &str) -> Hook",
+        "description": "Create a new hook with generated nanoid"
+      },
+      {
+        "name": "CapturedRequest::new",
+        "signature": "pub fn new(hook_id: &str, method: &str, path: &str, headers: HeaderMap, body: Vec<u8>, source_ip: IpAddr) -> CapturedRequest",
+        "description": "Create a new captured request with generated UUID"
+      }
+    ]
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Pure data types. nanoid and uuid are small crates with no system deps."
+  },
+  "estimate": {
+    "points": 2,
+    "confidence": "high"
+  }
+}

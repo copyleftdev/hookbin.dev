@@ -1,0 +1,85 @@
+{
+  "id": "HB-004",
+  "title": "CLI argument parsing and TOML config loading",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical", "operations"],
+  "milestone": "M0: Foundation",
+  "epic": "HB-001",
+  "depends_on": ["HB-002"],
+  "blocks": ["HB-006"],
+  "user_story": "As an operator, I need to configure Hookbin via CLI flags or a TOML file so I can deploy it with my preferred settings without recompiling.",
+  "description": "Implement the Config struct and CLI parsing using clap derive. Support all TigerBeetle-style bounds from CLAUDE.md as CLI flags with sane defaults. Optionally load a TOML config file that CLI flags override. Zero config by default — the binary runs with no flags.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "no CLI flags and no TOML file",
+      "when": "running `./hookbin serve`",
+      "then": "all defaults apply: port 3000, data dir ./hookbin-data, max-hooks 100, max-payload 1MB, retention 24h, rate-limit 60/min, max-requests 1000"
+    },
+    {
+      "id": "AC-2",
+      "given": "CLI flags `--port 9090 --data /tmp/hb --max-hooks 50`",
+      "when": "config is loaded",
+      "then": "port is 9090, data dir is /tmp/hb, max-hooks is 50, all other values are defaults"
+    },
+    {
+      "id": "AC-3",
+      "given": "a TOML file with `port = 7070` and a CLI flag `--port 9090`",
+      "when": "config is loaded",
+      "then": "CLI flag wins — port is 9090"
+    },
+    {
+      "id": "AC-4",
+      "given": "a TOML file with `max_hooks = 200`",
+      "when": "config is loaded with no CLI override",
+      "then": "max_hooks is 200"
+    },
+    {
+      "id": "AC-5",
+      "given": "an invalid TOML file (bad syntax)",
+      "when": "config is loaded",
+      "then": "a clear error message is printed to stderr and the process exits with code 1"
+    },
+    {
+      "id": "AC-6",
+      "given": "`--config /nonexistent.toml`",
+      "when": "config is loaded",
+      "then": "a clear error about the missing file is printed and the process exits with code 1"
+    },
+    {
+      "id": "AC-7",
+      "given": "this module",
+      "when": "running `cargo test`",
+      "then": "unit tests verify default values, TOML parsing, and CLI-overrides-TOML precedence"
+    }
+  ],
+  "technical_context": {
+    "crates": ["clap (derive feature)", "serde", "toml"],
+    "files": ["src/config.rs", "src/main.rs"],
+    "functions": [
+      {
+        "name": "Config::load",
+        "signature": "pub fn load() -> Result<Config, AppError>",
+        "description": "Parse CLI args, optionally load TOML, merge with CLI-wins precedence"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 10,
+      "memory_budget_mb": 1
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Config parsing is pure logic. TOML crate is small. No network IO."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}

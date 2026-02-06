@@ -1,0 +1,112 @@
+{
+  "id": "HB-006",
+  "title": "SQLite database layer with WAL mode and migrations",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical", "storage"],
+  "milestone": "M0: Foundation",
+  "epic": "HB-001",
+  "depends_on": ["HB-003", "HB-004", "HB-005"],
+  "blocks": ["HB-007"],
+  "user_story": "As an operator, I need Hookbin to create and manage its own SQLite database automatically so I never have to run migrations or set up a database manually.",
+  "description": "Implement the Database struct wrapping a rusqlite Connection. On open: create the data directory if needed, open SQLite in WAL mode, enable foreign keys, run embedded migrations to create the hooks, requests, and tokens tables. Provide basic insert/query methods for the models. All errors are mapped to AppError. The database file lives at `{data_dir}/hookbin.db`.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a data directory that does not exist",
+      "when": "Database::open is called",
+      "then": "the directory is created, hookbin.db is created, WAL mode is enabled, and the schema is applied"
+    },
+    {
+      "id": "AC-2",
+      "given": "an existing hookbin.db with the current schema",
+      "when": "Database::open is called again",
+      "then": "migrations are idempotent — no error, no duplicate tables"
+    },
+    {
+      "id": "AC-3",
+      "given": "an open database",
+      "when": "querying `PRAGMA journal_mode`",
+      "then": "the result is 'wal'"
+    },
+    {
+      "id": "AC-4",
+      "given": "an open database",
+      "when": "querying `PRAGMA foreign_keys`",
+      "then": "the result is 1 (enabled)"
+    },
+    {
+      "id": "AC-5",
+      "given": "an open database",
+      "when": "inserting a Hook and querying it back",
+      "then": "the Hook round-trips correctly with all fields preserved"
+    },
+    {
+      "id": "AC-6",
+      "given": "an open database",
+      "when": "inserting a CapturedRequest and querying it back",
+      "then": "the CapturedRequest round-trips correctly including headers and body"
+    },
+    {
+      "id": "AC-7",
+      "given": "a database error (e.g., disk full simulation or constraint violation)",
+      "when": "an insert fails",
+      "then": "the error is mapped to AppError::Internal with context, not a panic"
+    },
+    {
+      "id": "AC-8",
+      "given": "this module",
+      "when": "running `cargo test`",
+      "then": "tests use an in-memory SQLite database (`:memory:`) and verify schema creation, CRUD operations, WAL mode, and error mapping"
+    }
+  ],
+  "technical_context": {
+    "crates": ["rusqlite (bundled feature)"],
+    "files": ["src/db.rs"],
+    "functions": [
+      {
+        "name": "Database::open",
+        "signature": "pub fn open(data_dir: &Path) -> Result<Database, AppError>",
+        "description": "Open or create the SQLite database, enable WAL, run migrations"
+      },
+      {
+        "name": "Database::insert_hook",
+        "signature": "pub fn insert_hook(&self, hook: &Hook) -> Result<(), AppError>",
+        "description": "Insert a new hook"
+      },
+      {
+        "name": "Database::get_hook",
+        "signature": "pub fn get_hook(&self, hook_id: &str) -> Result<Hook, AppError>",
+        "description": "Fetch a hook by ID"
+      },
+      {
+        "name": "Database::insert_request",
+        "signature": "pub fn insert_request(&self, req: &CapturedRequest) -> Result<(), AppError>",
+        "description": "Insert a captured webhook request"
+      },
+      {
+        "name": "Database::list_requests",
+        "signature": "pub fn list_requests(&self, hook_id: &str, limit: u32) -> Result<Vec<CapturedRequest>, AppError>",
+        "description": "List captured requests for a hook, newest first"
+      },
+      {
+        "name": "Database::run_migrations",
+        "signature": "fn run_migrations(conn: &Connection) -> Result<(), AppError>",
+        "description": "Create tables if not exist (idempotent)"
+      }
+    ]
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "rusqlite with 'bundled' compiles SQLite into the binary. WAL mode for crash safety. All errors mapped through AppError."
+  },
+  "estimate": {
+    "points": 5,
+    "confidence": "high"
+  }
+}
