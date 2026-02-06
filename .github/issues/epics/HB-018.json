@@ -2,7 +2,7 @@
   "id": "HB-018",
   "type": "epic",
   "title": "M3: Dashboard — embedded web UI, hook list, request feed, request inspector",
-  "status": "open",
+  "status": "done",
   "milestone": "M3: Dashboard",
   "children": ["HB-019", "HB-020", "HB-021", "HB-022", "HB-023"],
   "description": "Embedded web dashboard served from the single binary. Vanilla SPA with hash routing, dark theme, developer-oriented UI. No npm, no build tools, no framework.",

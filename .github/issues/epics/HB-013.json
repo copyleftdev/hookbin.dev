@@ -1,0 +1,44 @@
+{
+  "id": "HB-013",
+  "title": "M2: API — hook CRUD, request listing, request inspection",
+  "type": "epic",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["epic", "priority:critical", "api"],
+  "milestone": "M2: API",
+  "description": "Implement the full management API for hooks and captured requests. After this milestone, hookbin has a complete REST API: create hooks (already done in M1), list hooks, get/delete individual hooks, list captured requests per hook, and inspect individual requests with full detail. All endpoints return structured JSON with consistent error handling. Pagination support via query parameters.",
+  "goals": [
+    "GET /api/hooks lists all hooks with summary info",
+    "GET /api/hooks/{id} returns full hook details including request count",
+    "DELETE /api/hooks/{id} removes a hook and all its captured requests (CASCADE)",
+    "GET /api/hooks/{id}/requests lists captured requests with pagination",
+    "GET /api/hooks/{id}/requests/{rid} returns full request detail including headers and body"
+  ],
+  "children": ["HB-014", "HB-015", "HB-016", "HB-017"],
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a running hookbin server with hooks and captured requests",
+      "when": "using the API to list, inspect, and delete hooks and requests",
+      "then": "all operations return structured JSON with consistent error handling"
+    },
+    {
+      "id": "AC-2",
+      "given": "a hook with captured requests",
+      "when": "deleting the hook via DELETE /api/hooks/{id}",
+      "then": "the hook and all its requests are removed (CASCADE)"
+    },
+    {
+      "id": "AC-3",
+      "given": "a hook with many captured requests",
+      "when": "listing requests with limit and offset query parameters",
+      "then": "pagination works correctly, returning the requested slice"
+    }
+  ],
+  "out_of_scope": [
+    "Token-based authentication (M5: Hardening)",
+    "Rate limiting on API endpoints (M4: Operations)",
+    "Dashboard UI consuming these endpoints (M3: Dashboard)",
+    "Request replay (M4: Operations)"
+  ]
+}

@@ -2,7 +2,7 @@
   "id": "HB-022",
   "type": "story",
   "title": "Request feed: paginated request list per hook",
-  "status": "open",
+  "status": "done",
   "epic": "HB-018",
   "milestone": "M3: Dashboard",
   "points": 5,

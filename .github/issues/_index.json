@@ -28,7 +28,7 @@
     {
       "id": "HB-018",
       "title": "M3: Dashboard — embedded web UI, hook list, request feed, request inspector",
-      "status": "open",
+      "status": "done",
       "children": ["HB-019", "HB-020", "HB-021", "HB-022", "HB-023"],
       "file": "epics/HB-018.json"
     }
@@ -163,7 +163,7 @@
     {
       "id": "HB-019",
       "title": "Serve embedded static assets via rust-embed",
-      "status": "open",
+      "status": "done",
       "epic": "HB-018",
       "depends_on": ["HB-017"],
       "blocks": ["HB-020"],
@@ -172,7 +172,7 @@
     {
       "id": "HB-020",
       "title": "Dashboard shell: layout, styling, router",
-      "status": "open",
+      "status": "done",
       "epic": "HB-018",
       "depends_on": ["HB-019"],
       "blocks": ["HB-021"],
@@ -181,7 +181,7 @@
     {
       "id": "HB-021",
       "title": "Hook list view: display, create, delete",
-      "status": "open",
+      "status": "done",
       "epic": "HB-018",
       "depends_on": ["HB-020"],
       "blocks": ["HB-022"],
@@ -190,7 +190,7 @@
     {
       "id": "HB-022",
       "title": "Request feed: paginated request list per hook",
-      "status": "open",
+      "status": "done",
       "epic": "HB-018",
       "depends_on": ["HB-021"],
       "blocks": ["HB-023"],
@@ -199,7 +199,7 @@
     {
       "id": "HB-023",
       "title": "Request inspector: full detail with headers and body",
-      "status": "open",
+      "status": "done",
       "epic": "HB-018",
       "depends_on": ["HB-022"],
       "blocks": [],
@@ -231,7 +231,7 @@
     "M0: Foundation": { "total": 6, "done": 6 },
     "M1: Ingestion": { "total": 4, "done": 4 },
     "M2: API": { "total": 4, "done": 4 },
-    "M3: Dashboard": { "total": 5, "done": 0 },
+    "M3: Dashboard": { "total": 5, "done": 5 },
     "M4: Operations": { "total": 0, "done": 0 },
     "M5: Hardening": { "total": 0, "done": 0 }
   }

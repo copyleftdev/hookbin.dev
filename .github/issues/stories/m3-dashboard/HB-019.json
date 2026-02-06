@@ -2,7 +2,7 @@
   "id": "HB-019",
   "type": "story",
   "title": "Serve embedded static assets via rust-embed",
-  "status": "open",
+  "status": "done",
   "epic": "HB-018",
   "milestone": "M3: Dashboard",
   "points": 3,

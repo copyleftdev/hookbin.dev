@@ -2,7 +2,7 @@
   "id": "HB-023",
   "type": "story",
   "title": "Request inspector: full detail with headers and body",
-  "status": "open",
+  "status": "done",
   "epic": "HB-018",
   "milestone": "M3: Dashboard",
   "points": 5,

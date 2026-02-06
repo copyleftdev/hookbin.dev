@@ -2,7 +2,7 @@
   "id": "HB-020",
   "type": "story",
   "title": "Dashboard shell: layout, styling, router",
-  "status": "open",
+  "status": "done",
   "epic": "HB-018",
   "milestone": "M3: Dashboard",
   "points": 3,

@@ -2,7 +2,7 @@
   "id": "HB-021",
   "type": "story",
   "title": "Hook list view: display, create, delete",
-  "status": "open",
+  "status": "done",
   "epic": "HB-018",
   "milestone": "M3: Dashboard",
   "points": 5,
