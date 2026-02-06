@@ -7,6 +7,7 @@ mod rate_limit;
 mod retention;
 mod server;
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -74,9 +75,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             tracing::info!(addr = %addr, "listening");
 
-            axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown_signal())
-                .await?;
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(shutdown_signal())
+            .await?;
 
             tracing::info!("shutdown complete");
             Ok(())

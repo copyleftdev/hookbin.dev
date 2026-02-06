@@ -30,6 +30,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/hooks",
             axum::routing::post(handlers::hooks::create_hook),
         )
+        .route(
+            "/h/{hook_id}",
+            axum::routing::any(handlers::ingest::ingest_webhook),
+        )
         .fallback(fallback_handler)
         .with_state(state)
 }
@@ -51,8 +55,10 @@ async fn fallback_handler() -> impl IntoResponse {
 mod tests {
     use super::*;
     use axum::body::to_bytes;
+    use axum::extract::connect_info::ConnectInfo;
     use axum::http::Request;
     use serde_json::Value;
+    use std::net::SocketAddr;
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
@@ -62,6 +68,21 @@ mod tests {
             config: Arc::new(Config::default()),
             start_time: Instant::now(),
         }
+    }
+
+    /// Build a router with a fake ConnectInfo for testing ingestion.
+    fn build_test_router(state: AppState) -> Router {
+        let addr: SocketAddr = "192.168.1.42:12345".parse().unwrap();
+        build_router(state).layer(axum::Extension(ConnectInfo(addr)))
+    }
+
+    /// Helper: create a hook via the API and return the hook_id.
+    async fn create_test_hook(state: &AppState, name: &str) -> String {
+        use crate::models::Hook;
+        let hook = Hook::new(name);
+        let hook_id = hook.hook_id.clone();
+        state.db.insert_hook(&hook).unwrap();
+        hook_id
     }
 
     // AC-2: Health check returns 200 with expected JSON structure
@@ -395,5 +416,282 @@ mod tests {
             name.starts_with("hook-"),
             "whitespace name should auto-generate, got: {name}"
         );
+    }
+
+    // -- HB-010: Webhook ingestion tests --
+
+    // AC-1: POST /h/{hook_id} captures request and returns 200 with request_id
+    #[tokio::test]
+    async fn ingest_post_returns_200_with_request_id() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Ingest Test").await;
+        let app = build_test_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"event": "push"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["request_id"].is_string());
+        assert!(!json["request_id"].as_str().unwrap().is_empty());
+        assert_eq!(json["hook_id"], hook_id);
+
+        // Verify it's a valid UUID
+        let rid = json["request_id"].as_str().unwrap();
+        uuid::Uuid::parse_str(rid).unwrap();
+
+        // AC-1: Verify stored in SQLite
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].request_id, rid);
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].body, b"{\"event\": \"push\"}");
+    }
+
+    // AC-2: All HTTP methods are captured correctly
+    #[tokio::test]
+    async fn ingest_captures_all_http_methods() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Methods Test").await;
+
+        let methods = ["POST", "PUT", "PATCH", "DELETE", "GET"];
+        for method in methods {
+            let app = build_test_router(state.clone());
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(format!("/h/{hook_id}"))
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "{method} should return 200"
+            );
+        }
+
+        // Verify all 5 methods were stored
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 5);
+
+        let stored_methods: Vec<&str> = requests.iter().map(|r| r.method.as_str()).collect();
+        for method in methods {
+            assert!(
+                stored_methods.contains(&method),
+                "method {method} should be stored"
+            );
+        }
+    }
+
+    // AC-3: Nonexistent hook returns 404
+    #[tokio::test]
+    async fn ingest_nonexistent_hook_returns_404() {
+        let state = test_state();
+        let app = build_test_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/h/nonexistent-hook-id")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].as_str().unwrap().contains("not found"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-4: Headers are captured, duplicates joined with ", "
+    #[tokio::test]
+    async fn ingest_captures_headers() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Headers Test").await;
+        let app = build_test_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .header("x-custom", "value1")
+                    .header("x-another", "value2")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].headers.get("x-custom").unwrap(), "value1");
+        assert_eq!(requests[0].headers.get("x-another").unwrap(), "value2");
+    }
+
+    // AC-5: Query string is captured in path field
+    #[tokio::test]
+    async fn ingest_captures_query_string() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Query Test").await;
+        let app = build_test_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}?foo=bar&baz=1"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+
+        let path = &requests[0].path;
+        assert!(
+            path.contains("foo=bar"),
+            "query string should be in path, got: {path}"
+        );
+        assert!(
+            path.contains("baz=1"),
+            "query string should be in path, got: {path}"
+        );
+    }
+
+    // AC-6: Empty body captured correctly
+    #[tokio::test]
+    async fn ingest_empty_body() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Empty Body Test").await;
+        let app = build_test_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].body.is_empty());
+        assert_eq!(requests[0].content_length, 0);
+    }
+
+    // AC-7: Binary body stored without corruption
+    #[tokio::test]
+    async fn ingest_binary_body() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Binary Body Test").await;
+        let app = build_test_router(state.clone());
+
+        let binary_data: Vec<u8> = vec![0x00, 0xFF, 0xFE, 0x80, 0x01, 0x02, 0x03];
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .header("content-type", "application/octet-stream")
+                    .body(axum::body::Body::from(binary_data.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].body, binary_data);
+        assert_eq!(requests[0].content_length, 7);
+    }
+
+    // AC-8: request_count is incremented on ingestion
+    #[tokio::test]
+    async fn ingest_increments_request_count() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Count Test").await;
+
+        // Ingest 3 requests
+        for i in 0..3 {
+            let app = build_test_router(state.clone());
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/h/{hook_id}"))
+                        .body(axum::body::Body::from(format!("request-{i}")))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let hook = state.db.get_hook(&hook_id).unwrap();
+        assert_eq!(hook.request_count, 3);
+    }
+
+    // AC-9: Source IP is captured from ConnectInfo
+    #[tokio::test]
+    async fn ingest_captures_source_ip() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "IP Test").await;
+        let app = build_test_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        // Our test helper sets ConnectInfo to 192.168.1.42:12345
+        assert_eq!(requests[0].source_ip, "192.168.1.42");
     }
 }
