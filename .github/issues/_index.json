@@ -2,14 +2,21 @@
   "project": "hookbin.dev",
   "prefix": "HB",
   "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
-  "total_issues": 7,
+  "total_issues": 12,
   "epics": [
     {
       "id": "HB-001",
       "title": "M0: Foundation — project skeleton, error types, config, DB, server",
-      "status": "ready",
+      "status": "done",
       "children": ["HB-002", "HB-003", "HB-004", "HB-005", "HB-006", "HB-007"],
       "file": "epics/HB-001.json"
+    },
+    {
+      "id": "HB-008",
+      "title": "M1: Ingestion — webhook capture, hook creation, resource limits",
+      "status": "ready",
+      "children": ["HB-009", "HB-010", "HB-011", "HB-012"],
+      "file": "epics/HB-008.json"
     }
   ],
   "stories": [
@@ -64,8 +71,44 @@
       "status": "done",
       "epic": "HB-001",
       "depends_on": ["HB-003", "HB-004", "HB-006"],
-      "blocks": [],
+      "blocks": ["HB-009"],
       "file": "stories/m0-foundation/HB-007.json"
+    },
+    {
+      "id": "HB-009",
+      "title": "Hook creation endpoint (POST /api/hooks)",
+      "status": "done",
+      "epic": "HB-008",
+      "depends_on": ["HB-007"],
+      "blocks": ["HB-010", "HB-012"],
+      "file": "stories/m1-ingestion/HB-009.json"
+    },
+    {
+      "id": "HB-010",
+      "title": "Webhook ingestion endpoint (any method to /h/{hook_id})",
+      "status": "ready",
+      "epic": "HB-008",
+      "depends_on": ["HB-009"],
+      "blocks": ["HB-011", "HB-012"],
+      "file": "stories/m1-ingestion/HB-010.json"
+    },
+    {
+      "id": "HB-011",
+      "title": "Payload size enforcement on ingestion",
+      "status": "ready",
+      "epic": "HB-008",
+      "depends_on": ["HB-010"],
+      "blocks": [],
+      "file": "stories/m1-ingestion/HB-011.json"
+    },
+    {
+      "id": "HB-012",
+      "title": "Resource bounds enforcement (max hooks, max requests per hook)",
+      "status": "ready",
+      "epic": "HB-008",
+      "depends_on": ["HB-009", "HB-010"],
+      "blocks": [],
+      "file": "stories/m1-ingestion/HB-012.json"
     }
   ],
   "dependency_graph": {
@@ -74,11 +117,15 @@
     "HB-004": { "depends_on": ["HB-002"], "blocks": ["HB-006"] },
     "HB-005": { "depends_on": ["HB-002", "HB-003"], "blocks": ["HB-006"] },
     "HB-006": { "depends_on": ["HB-003", "HB-004", "HB-005"], "blocks": ["HB-007"] },
-    "HB-007": { "depends_on": ["HB-003", "HB-004", "HB-006"], "blocks": [] }
+    "HB-007": { "depends_on": ["HB-003", "HB-004", "HB-006"], "blocks": ["HB-009"] },
+    "HB-009": { "depends_on": ["HB-007"], "blocks": ["HB-010", "HB-012"] },
+    "HB-010": { "depends_on": ["HB-009"], "blocks": ["HB-011", "HB-012"] },
+    "HB-011": { "depends_on": ["HB-010"], "blocks": [] },
+    "HB-012": { "depends_on": ["HB-009", "HB-010"], "blocks": [] }
   },
   "milestone_progress": {
     "M0: Foundation": { "total": 6, "done": 6 },
-    "M1: Ingestion": { "total": 0, "done": 0 },
+    "M1: Ingestion": { "total": 4, "done": 1 },
     "M2: API": { "total": 0, "done": 0 },
     "M3: Dashboard": { "total": 0, "done": 0 },
     "M4: Operations": { "total": 0, "done": 0 },

@@ -1,0 +1,103 @@
+{
+  "id": "HB-010",
+  "title": "Webhook ingestion endpoint (any method to /h/{hook_id})",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical", "ingestion"],
+  "milestone": "M1: Ingestion",
+  "epic": "HB-008",
+  "depends_on": ["HB-009"],
+  "blocks": ["HB-011", "HB-012"],
+  "user_story": "As an external service, I need to send HTTP requests to a hook URL and have them captured and stored so the hook owner can inspect them later.",
+  "description": "Implement the core ingestion handler at /h/{hook_id}. This endpoint accepts ANY HTTP method (POST, PUT, PATCH, DELETE, GET) and captures the full request: method, headers, raw body, content length, query string (in path), and source IP. The captured request is stored in SQLite via db.insert_request(). The response is 200 with a JSON confirmation containing the request_id. If the hook doesn't exist, return 404. Source IP is extracted from ConnectInfo<SocketAddr> with the server configured via into_make_service_with_connect_info.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a hook exists with hook_id 'abc123'",
+      "when": "sending POST /h/abc123 with headers and a JSON body",
+      "then": "response is 200 with JSON {\"request_id\": \"<uuid>\", \"hook_id\": \"abc123\"} and the request is stored in SQLite"
+    },
+    {
+      "id": "AC-2",
+      "given": "a hook exists with hook_id 'abc123'",
+      "when": "sending PUT /h/abc123, GET /h/abc123, DELETE /h/abc123, or PATCH /h/abc123",
+      "then": "each method is captured correctly — the stored request's method field matches the HTTP method used"
+    },
+    {
+      "id": "AC-3",
+      "given": "no hook with hook_id 'nonexistent'",
+      "when": "sending POST /h/nonexistent",
+      "then": "response is 404 with structured JSON error and suggestion"
+    },
+    {
+      "id": "AC-4",
+      "given": "a hook exists",
+      "when": "sending a request with multiple headers including duplicates",
+      "then": "all headers are captured; duplicate header values are joined with ', '"
+    },
+    {
+      "id": "AC-5",
+      "given": "a hook exists",
+      "when": "sending a request with query parameters (e.g. /h/abc123?foo=bar&baz=1)",
+      "then": "the query string is captured in the stored request's path field"
+    },
+    {
+      "id": "AC-6",
+      "given": "a hook exists",
+      "when": "sending a request with an empty body (e.g. GET)",
+      "then": "the request is stored with empty body and content_length 0"
+    },
+    {
+      "id": "AC-7",
+      "given": "a hook exists",
+      "when": "sending a request with binary body (non-UTF-8)",
+      "then": "the body is stored as raw bytes (BLOB) without corruption"
+    },
+    {
+      "id": "AC-8",
+      "given": "a hook exists and requests are ingested",
+      "when": "checking the hook in the database",
+      "then": "the hook's request_count is incremented for each ingested request"
+    },
+    {
+      "id": "AC-9",
+      "given": "the ingestion endpoint",
+      "when": "the source IP is available",
+      "then": "the source_ip field is populated from the TCP connection (ConnectInfo<SocketAddr>)"
+    },
+    {
+      "id": "AC-10",
+      "given": "this endpoint",
+      "when": "running cargo test",
+      "then": "integration tests verify all acceptance criteria"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "serde_json", "uuid", "tokio"],
+    "files": ["src/handlers/ingest.rs", "src/server.rs", "src/main.rs"],
+    "functions": [
+      {
+        "name": "ingest_webhook",
+        "signature": "pub async fn ingest_webhook(State(state): State<AppState>, ConnectInfo(addr): ConnectInfo<SocketAddr>, Path(hook_id): Path<String>, method: Method, headers: HeaderMap, body: Bytes) -> Result<impl IntoResponse, AppError>",
+        "description": "Capture any HTTP request to /h/{hook_id} — extract all metadata, store in SQLite, return 200 with request_id"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 10,
+      "throughput_per_second": 5000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "All request data stored in SQLite. Body stored as BLOB. Headers as JSON TEXT. Source IP from TCP connection info."
+  },
+  "estimate": {
+    "points": 5,
+    "confidence": "high"
+  }
+}

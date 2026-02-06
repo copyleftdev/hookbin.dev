@@ -1,0 +1,80 @@
+{
+  "id": "HB-011",
+  "title": "Payload size enforcement on ingestion",
+  "type": "story",
+  "status": "ready",
+  "priority": "high",
+  "labels": ["story", "priority:high", "ingestion", "operations"],
+  "milestone": "M1: Ingestion",
+  "epic": "HB-008",
+  "depends_on": ["HB-010"],
+  "blocks": [],
+  "user_story": "As an operator, I need the server to reject oversized payloads before they consume memory or disk space so that the system stays within bounded resource usage.",
+  "description": "Enforce the --max-payload configuration limit on the ingestion endpoint. Use tower-http's RequestBodyLimitLayer applied to the ingestion route to reject bodies that exceed the configured max_payload size. When the limit is exceeded, return a 413 Payload Too Large with a structured JSON error including the configured limit and a suggestion to reduce payload size or adjust --max-payload. The limit must come from Config, not be hardcoded.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a server configured with --max-payload 1024",
+      "when": "sending a request to /h/{hook_id} with a 2000-byte body",
+      "then": "response is 413 with structured JSON error including size info and suggestion to configure --max-payload"
+    },
+    {
+      "id": "AC-2",
+      "given": "a server configured with --max-payload 1024",
+      "when": "sending a request to /h/{hook_id} with a 1024-byte body",
+      "then": "the request is accepted and stored (200)"
+    },
+    {
+      "id": "AC-3",
+      "given": "a server configured with --max-payload 1024",
+      "when": "sending a request to /h/{hook_id} with an empty body",
+      "then": "the request is accepted and stored (200)"
+    },
+    {
+      "id": "AC-4",
+      "given": "the default configuration (max_payload = 1048576 / 1MB)",
+      "when": "sending a request with a body under 1MB",
+      "then": "the request is accepted"
+    },
+    {
+      "id": "AC-5",
+      "given": "the body limit is exceeded",
+      "when": "the error is returned",
+      "then": "the response is a structured JSON error (not Axum's default plain-text 413)"
+    },
+    {
+      "id": "AC-6",
+      "given": "this feature",
+      "when": "running cargo test",
+      "then": "tests verify rejection of oversized payloads and acceptance of payloads at and below the limit"
+    }
+  ],
+  "technical_context": {
+    "crates": ["tower-http", "axum"],
+    "files": ["src/server.rs", "src/handlers/ingest.rs"],
+    "functions": [
+      {
+        "name": "RequestBodyLimitLayer",
+        "signature": "tower_http::limit::RequestBodyLimitLayer::new(max_bytes)",
+        "description": "Tower layer that rejects request bodies exceeding the specified size"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 1,
+      "throughput_per_second": 10000,
+      "memory_budget_mb": 0
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Payload limit prevents memory exhaustion. Rejection happens before body is fully read. Limit comes from Config."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}
