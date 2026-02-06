@@ -194,6 +194,21 @@ impl Database {
         Ok(hooks)
     }
 
+    /// Delete a hook by ID. Captured requests are CASCADE-deleted by foreign key.
+    /// Returns NotFound if the hook doesn't exist.
+    pub fn delete_hook(&self, hook_id: &str) -> Result<(), AppError> {
+        let conn = self.lock()?;
+        let rows_affected = conn
+            .execute("DELETE FROM hooks WHERE hook_id = ?1", params![hook_id])
+            .map_err(|e| AppError::Internal(format!("failed to delete hook '{hook_id}': {e}")))?;
+
+        if rows_affected == 0 {
+            return Err(AppError::NotFound(format!("hook '{hook_id}' not found")));
+        }
+
+        Ok(())
+    }
+
     /// Count total hooks in the database.
     pub fn count_hooks(&self) -> Result<u32, AppError> {
         let conn = self.lock()?;
@@ -667,6 +682,63 @@ mod tests {
         assert_eq!(hooks[0].hook_id, "h3"); // newest
         assert_eq!(hooks[1].hook_id, "h2");
         assert_eq!(hooks[2].hook_id, "h1"); // oldest
+    }
+
+    // HB-015: delete_hook removes hook
+    #[test]
+    fn delete_hook_removes_hook() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Doomed")).unwrap();
+        assert!(db.get_hook("h1").is_ok());
+
+        db.delete_hook("h1").unwrap();
+        assert!(db.get_hook("h1").is_err());
+    }
+
+    // HB-015: delete_hook cascades to requests
+    #[test]
+    fn delete_hook_cascades_requests() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Cascade")).unwrap();
+        db.insert_request(&make_request("r1", "h1")).unwrap();
+        db.insert_request(&make_request("r2", "h1")).unwrap();
+
+        db.delete_hook("h1").unwrap();
+        // Requests should be gone (CASCADE)
+        // We can verify via a direct query since list_requests checks hook_id
+        let count: i32 = db.with_conn(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM requests WHERE hook_id = 'h1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+        });
+        assert_eq!(count, 0);
+    }
+
+    // HB-015: delete_hook returns NotFound for missing hook
+    #[test]
+    fn delete_hook_not_found() {
+        let db = test_db();
+        let err = db.delete_hook("nonexistent").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {msg}");
+    }
+
+    // HB-015: delete_hook doesn't affect other hooks
+    #[test]
+    fn delete_hook_does_not_affect_others() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Keep")).unwrap();
+        db.insert_hook(&make_hook("h2", "Delete")).unwrap();
+        db.insert_request(&make_request("r1", "h1")).unwrap();
+        db.insert_request(&make_request("r2", "h2")).unwrap();
+
+        db.delete_hook("h2").unwrap();
+
+        assert!(db.get_hook("h1").is_ok());
+        assert_eq!(db.list_requests("h1", 10).unwrap().len(), 1);
     }
 
     // HB-012 AC-5: count_hooks returns correct count
