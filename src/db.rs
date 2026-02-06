@@ -162,6 +162,38 @@ impl Database {
         })
     }
 
+    /// List all hooks, ordered by created_at descending (newest first).
+    pub fn list_hooks(&self) -> Result<Vec<Hook>, AppError> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT hook_id, name, created_at, request_count
+                 FROM hooks
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| AppError::Internal(format!("failed to prepare hook list query: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(Hook {
+                    hook_id: row.get(0)?,
+                    name: row.get(1)?,
+                    created_at: row.get(2)?,
+                    request_count: row.get(3)?,
+                })
+            })
+            .map_err(|e| AppError::Internal(format!("failed to list hooks: {e}")))?;
+
+        let mut hooks = Vec::new();
+        for row in rows {
+            hooks.push(
+                row.map_err(|e| AppError::Internal(format!("failed to read hook row: {e}")))?,
+            );
+        }
+
+        Ok(hooks)
+    }
+
     /// Count total hooks in the database.
     pub fn count_hooks(&self) -> Result<u32, AppError> {
         let conn = self.lock()?;
@@ -604,6 +636,37 @@ mod tests {
         assert!(results[0].headers.is_empty());
         assert!(results[0].body.is_empty());
         assert_eq!(results[0].content_length, 0);
+    }
+
+    // HB-014: list_hooks returns empty vec when no hooks
+    #[test]
+    fn list_hooks_empty() {
+        let db = test_db();
+        let hooks = db.list_hooks().unwrap();
+        assert!(hooks.is_empty());
+    }
+
+    // HB-014: list_hooks returns all hooks ordered by created_at DESC
+    #[test]
+    fn list_hooks_ordered_by_created_at_desc() {
+        let db = test_db();
+
+        let mut h1 = make_hook("h1", "First");
+        h1.created_at = 1000;
+        let mut h2 = make_hook("h2", "Second");
+        h2.created_at = 2000;
+        let mut h3 = make_hook("h3", "Third");
+        h3.created_at = 3000;
+
+        db.insert_hook(&h1).unwrap();
+        db.insert_hook(&h2).unwrap();
+        db.insert_hook(&h3).unwrap();
+
+        let hooks = db.list_hooks().unwrap();
+        assert_eq!(hooks.len(), 3);
+        assert_eq!(hooks[0].hook_id, "h3"); // newest
+        assert_eq!(hooks[1].hook_id, "h2");
+        assert_eq!(hooks[2].hook_id, "h1"); // oldest
     }
 
     // HB-012 AC-5: count_hooks returns correct count
