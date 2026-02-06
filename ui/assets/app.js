@@ -320,9 +320,111 @@ async function renderRequestFeed(hookId) {
   await loadRequests(false);
 }
 
+// --- Request Inspector View ---
 async function renderRequestDetail(hookId, requestId) {
   show('view-detail');
-  $('#view-detail').innerHTML = '<p class="empty-state">Loading request...</p>';
+  const el = $('#view-detail');
+  el.innerHTML = '<p class="empty-state">Loading request...</p>';
+
+  const req = await api.get('/api/hooks/' + hookId + '/requests/' + requestId);
+
+  // Decode body from base64
+  let bodyText = '';
+  let bodyDisplay = '';
+  let isBinary = false;
+  if (!req.body || req.body === '') {
+    bodyDisplay = '<span style="color:var(--text-muted);">(empty body)</span>';
+  } else {
+    try {
+      const raw = atob(req.body);
+      // Check if it's valid UTF-8 text
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      bodyText = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+
+      // Try to pretty-print JSON
+      try {
+        const parsed = JSON.parse(bodyText);
+        bodyDisplay = '<pre class="code-block">' + escapeHtml(JSON.stringify(parsed, null, 2)) + '</pre>';
+      } catch {
+        bodyDisplay = '<pre class="code-block">' + escapeHtml(bodyText) + '</pre>';
+      }
+    } catch {
+      isBinary = true;
+      bodyDisplay = '<span style="color:var(--text-muted);">(binary payload, ' + formatBytes(req.content_length) + ')</span>';
+    }
+  }
+
+  // Format timestamp
+  const date = new Date(req.received_at * 1000);
+  const timestamp = date.toISOString().replace('T', ' ').replace(/\..*$/, '') + ' UTC';
+
+  let html = '<div class="breadcrumb">';
+  html += '<a href="#/hooks">Hooks</a> / ';
+  html += '<a href="#/hooks/' + escapeHtml(hookId) + '">Requests</a> / ';
+  html += escapeHtml(requestId.substring(0, 8)) + '...';
+  html += '</div>';
+
+  // Summary
+  html += '<div class="card" style="margin-bottom:16px;">';
+  html += '<div class="card-header">';
+  html += '<span>' + methodBadge(req.method) + ' <span style="color:var(--text-muted);">' + escapeHtml(req.path) + '</span></span>';
+  html += '</div>';
+  html += '<div class="card-meta">';
+  html += '<span>' + formatBytes(req.content_length) + '</span>';
+  html += '<span>' + escapeHtml(req.source_ip) + '</span>';
+  html += '<span>' + escapeHtml(timestamp) + '</span>';
+  html += '<span>' + timeAgo(req.received_at) + '</span>';
+  html += '</div>';
+  html += '</div>';
+
+  // Headers
+  const headers = req.headers || {};
+  const headerKeys = Object.keys(headers);
+  html += '<div class="section-header">';
+  html += '<span class="section-title">Headers (' + headerKeys.length + ')</span>';
+  if (headerKeys.length > 0) {
+    html += '<button class="btn btn-small" id="btn-copy-headers">copy</button>';
+  }
+  html += '</div>';
+
+  if (headerKeys.length > 0) {
+    html += '<table class="kv-table">';
+    for (const key of headerKeys.sort()) {
+      html += '<tr><th>' + escapeHtml(key) + '</th><td>' + escapeHtml(headers[key]) + '</td></tr>';
+    }
+    html += '</table>';
+  } else {
+    html += '<p style="color:var(--text-muted);font-size:13px;">(no headers)</p>';
+  }
+
+  // Body
+  html += '<div class="section-header" style="margin-top:20px;">';
+  html += '<span class="section-title">Body</span>';
+  if (bodyText && !isBinary) {
+    html += '<button class="btn btn-small" id="btn-copy-body">copy</button>';
+  }
+  html += '</div>';
+  html += bodyDisplay;
+
+  el.innerHTML = html;
+
+  // Copy headers handler
+  const copyHeadersBtn = document.getElementById('btn-copy-headers');
+  if (copyHeadersBtn) {
+    copyHeadersBtn.addEventListener('click', () => {
+      const text = headerKeys.sort().map(k => k + ': ' + headers[k]).join('\n');
+      copyText(text);
+    });
+  }
+
+  // Copy body handler
+  const copyBodyBtn = document.getElementById('btn-copy-body');
+  if (copyBodyBtn) {
+    copyBodyBtn.addEventListener('click', () => {
+      copyText(bodyText);
+    });
+  }
 }
 
 // --- Init ---
