@@ -2,7 +2,7 @@
   "id": "HB-008",
   "title": "M1: Ingestion — webhook capture, hook creation, resource limits",
   "type": "epic",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["epic", "priority:critical", "ingestion"],
   "milestone": "M1: Ingestion",
