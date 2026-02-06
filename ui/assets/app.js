@@ -224,9 +224,100 @@ async function renderHookList() {
   });
 }
 
+// --- Request Feed View ---
 async function renderRequestFeed(hookId) {
   show('view-requests');
-  $('#view-requests').innerHTML = '<p class="empty-state">Loading requests...</p>';
+  const el = $('#view-requests');
+  el.innerHTML = '<p class="empty-state">Loading requests...</p>';
+
+  const hook = await api.get('/api/hooks/' + hookId);
+  const origin = location.origin;
+  const ingestUrl = origin + hook.url;
+
+  let offset = 0;
+  const limit = 50;
+
+  async function loadRequests(append) {
+    const data = await api.get('/api/hooks/' + hookId + '/requests?limit=' + limit + '&offset=' + offset);
+    const requests = data.requests || [];
+    const total = data.total || 0;
+
+    if (!append) {
+      let html = '<div class="breadcrumb"><a href="#/hooks">Hooks</a> / ' + escapeHtml(hook.name) + '</div>';
+      html += '<div class="url-box" style="margin-bottom:16px;">';
+      html += '<span style="flex:1;">' + escapeHtml(ingestUrl) + '</span>';
+      html += '<button class="btn btn-small btn-copy-feed-url" data-url="' + escapeHtml(ingestUrl) + '">copy</button>';
+      html += '</div>';
+      html += '<div class="toolbar">';
+      html += '<span class="status-text" id="feed-status"></span>';
+      html += '</div>';
+      html += '<div id="request-list"></div>';
+      html += '<div id="feed-footer" style="text-align:center;margin:16px 0;"></div>';
+      el.innerHTML = html;
+
+      el.querySelector('.btn-copy-feed-url').addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyText(e.target.dataset.url);
+      });
+    }
+
+    const listEl = document.getElementById('request-list');
+    const statusEl = document.getElementById('feed-status');
+    const footerEl = document.getElementById('feed-footer');
+
+    const currentCount = listEl.querySelectorAll('.card').length + requests.length;
+    statusEl.textContent = 'Showing ' + currentCount + ' of ' + total;
+
+    if (total === 0 && !append) {
+      listEl.innerHTML = '<p class="empty-state">No requests captured yet. Send a webhook to ' + escapeHtml(ingestUrl) + '</p>';
+      footerEl.innerHTML = '';
+      return;
+    }
+
+    let cards = '';
+    for (const req of requests) {
+      cards += '<div class="card card-clickable" data-hook-id="' + escapeHtml(hookId) + '" data-request-id="' + escapeHtml(req.request_id) + '">';
+      cards += '<div class="card-header">';
+      cards += '<span>' + methodBadge(req.method) + ' <span style="color:var(--text-muted);">' + escapeHtml(req.path) + '</span></span>';
+      cards += '<span class="card-meta" style="margin:0;">' + timeAgo(req.received_at) + '</span>';
+      cards += '</div>';
+      cards += '<div class="card-meta">';
+      cards += '<span>' + formatBytes(req.content_length) + '</span>';
+      cards += '<span>' + escapeHtml(req.source_ip) + '</span>';
+      cards += '</div>';
+      cards += '</div>';
+    }
+
+    if (append) {
+      listEl.insertAdjacentHTML('beforeend', cards);
+    } else {
+      listEl.innerHTML = cards;
+    }
+
+    // Click to view detail
+    listEl.querySelectorAll('.card-clickable').forEach(card => {
+      card.onclick = () => {
+        navigate('/hooks/' + card.dataset.hookId + '/requests/' + card.dataset.requestId);
+      };
+    });
+
+    // Load more
+    if (currentCount < total) {
+      footerEl.innerHTML = '<button class="btn" id="btn-load-more">Load more</button>';
+      document.getElementById('btn-load-more').addEventListener('click', async () => {
+        offset += limit;
+        try {
+          await loadRequests(true);
+        } catch (err) {
+          toast(err.error || 'Failed to load more', 'error');
+        }
+      });
+    } else {
+      footerEl.innerHTML = '';
+    }
+  }
+
+  await loadRequests(false);
 }
 
 async function renderRequestDetail(hookId, requestId) {
