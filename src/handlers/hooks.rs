@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
@@ -42,6 +42,49 @@ pub async fn list_hooks(State(state): State<AppState>) -> Result<impl IntoRespon
     Ok(axum::Json(json!({
         "hooks": hooks_json,
         "count": count,
+    })))
+}
+
+/// GET /api/hooks/{id} — return hook details.
+///
+/// Returns the full hook object with hook_id, name, created_at, request_count, and url.
+/// Returns 404 if the hook doesn't exist.
+pub async fn get_hook_detail(
+    State(state): State<AppState>,
+    Path(hook_id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let hook = state.db.get_hook(&hook_id)?;
+
+    Ok(axum::Json(json!({
+        "hook_id": hook.hook_id,
+        "name": hook.name,
+        "created_at": hook.created_at,
+        "request_count": hook.request_count,
+        "url": format!("/h/{}", hook.hook_id),
+    })))
+}
+
+/// DELETE /api/hooks/{id} — remove a hook and all its captured requests.
+///
+/// Deletes the hook by ID. All associated requests are CASCADE-deleted
+/// via the foreign key constraint. Returns 404 if the hook doesn't exist.
+pub async fn delete_hook(
+    State(state): State<AppState>,
+    Path(hook_id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify the hook exists and get its name for the response
+    let hook = state.db.get_hook(&hook_id)?;
+
+    state.db.delete_hook(&hook_id).map_err(|e| {
+        tracing::error!(hook_id = %hook_id, error = %e, "failed to delete hook");
+        e
+    })?;
+
+    tracing::info!(hook_id = %hook_id, name = %hook.name, "hook deleted");
+
+    Ok(axum::Json(json!({
+        "deleted": true,
+        "hook_id": hook_id,
     })))
 }
 

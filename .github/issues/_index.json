@@ -129,7 +129,7 @@
     {
       "id": "HB-015",
       "title": "Hook detail and deletion endpoints (GET/DELETE /api/hooks/{id})",
-      "status": "ready",
+      "status": "done",
       "epic": "HB-013",
       "depends_on": ["HB-014"],
       "blocks": ["HB-016"],
@@ -173,7 +173,7 @@
   "milestone_progress": {
     "M0: Foundation": { "total": 6, "done": 6 },
     "M1: Ingestion": { "total": 4, "done": 4 },
-    "M2: API": { "total": 4, "done": 1 },
+    "M2: API": { "total": 4, "done": 2 },
     "M3: Dashboard": { "total": 0, "done": 0 },
     "M4: Operations": { "total": 0, "done": 0 },
     "M5: Hardening": { "total": 0, "done": 0 }

@@ -36,6 +36,11 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::get(handlers::hooks::list_hooks).post(handlers::hooks::create_hook),
         )
         .route(
+            "/api/hooks/{hook_id}",
+            axum::routing::get(handlers::hooks::get_hook_detail)
+                .delete(handlers::hooks::delete_hook),
+        )
+        .route(
             "/h/{hook_id}",
             axum::routing::any(handlers::ingest::ingest_webhook),
         )
@@ -1325,5 +1330,213 @@ mod tests {
 
         assert_eq!(json["count"], 1);
         assert_eq!(json["hooks"][0]["name"], "Only Hook");
+    }
+
+    // -- HB-015: Hook detail and deletion tests --
+
+    // AC-1: GET /api/hooks/{id} returns hook details
+    #[tokio::test]
+    async fn get_hook_detail_returns_200() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Detail Test").await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["hook_id"], hook_id);
+        assert_eq!(json["name"], "Detail Test");
+        assert!(json["created_at"].is_number());
+        assert_eq!(json["request_count"], 0);
+        assert_eq!(json["url"], format!("/h/{hook_id}"));
+    }
+
+    // AC-2: GET /api/hooks/{id} with nonexistent hook returns 404
+    #[tokio::test]
+    async fn get_hook_detail_not_found() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks/nonexistent")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].as_str().unwrap().contains("not found"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-3: DELETE /api/hooks/{id} removes hook and CASCADE-deletes requests
+    #[tokio::test]
+    async fn delete_hook_removes_hook_and_requests() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Delete Me").await;
+
+        // Ingest some requests
+        for i in 0..5 {
+            let app = build_test_router(state.clone());
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from(format!("req-{i}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+
+        // Verify 5 requests stored
+        assert_eq!(state.db.list_requests(&hook_id, 10).unwrap().len(), 5);
+
+        // Delete the hook
+        let app = build_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/hooks/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["deleted"], true);
+        assert_eq!(json["hook_id"], hook_id);
+
+        // Verify hook is gone
+        assert!(state.db.get_hook(&hook_id).is_err());
+
+        // Verify requests are CASCADE-deleted
+        assert!(state.db.list_requests(&hook_id, 10).unwrap().is_empty());
+    }
+
+    // AC-4: DELETE /api/hooks/{id} with nonexistent hook returns 404
+    #[tokio::test]
+    async fn delete_hook_not_found() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/api/hooks/nonexistent")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].as_str().unwrap().contains("not found"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-5: Deleted hook no longer appears in GET /api/hooks list
+    #[tokio::test]
+    async fn deleted_hook_not_in_list() {
+        let state = test_state();
+        let hook_a = create_test_hook(&state, "Keep").await;
+        let hook_b = create_test_hook(&state, "Remove").await;
+
+        // Delete hook_b
+        let app = build_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!("/api/hooks/{hook_b}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // List hooks — only hook_a should remain
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["count"], 1);
+        assert_eq!(json["hooks"][0]["hook_id"], hook_a);
+    }
+
+    // AC-3 edge: GET detail shows updated request_count after ingestion
+    #[tokio::test]
+    async fn get_hook_detail_reflects_request_count() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Counting").await;
+
+        // Ingest 3 requests
+        for _ in 0..3 {
+            let app = build_test_router(state.clone());
+            app.oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from("data"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/hooks/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["request_count"], 3);
     }
 }
