@@ -1,0 +1,25 @@
+{
+  "id": "HB-019",
+  "type": "story",
+  "title": "Serve embedded static assets via rust-embed",
+  "status": "open",
+  "epic": "HB-018",
+  "milestone": "M3: Dashboard",
+  "points": 3,
+  "depends_on": ["HB-017"],
+  "blocks": ["HB-020"],
+  "labels": ["backend", "dashboard"],
+  "description": "Wire up rust-embed to serve static assets from ui/ directory. Add routes for / (index.html) and /assets/* (CSS, JS). Implement SPA-aware fallback: unknown non-API routes serve index.html, API/health/ingest routes preserve JSON 404.",
+  "acceptance_criteria": [
+    "GET / returns 200 with text/html content-type",
+    "GET /assets/style.css returns 200 with text/css content-type",
+    "GET /assets/app.js returns 200 with application/javascript content-type",
+    "Non-API unknown routes (e.g. /hooks/abc) serve index.html for SPA routing",
+    "API unknown routes (e.g. /api/nonexistent) still return JSON 404",
+    "/health and /h/* routes are unaffected"
+  ],
+  "technical_context": {
+    "files": ["src/handlers/dashboard.rs", "src/server.rs", "ui/index.html"],
+    "crates": ["rust-embed"]
+  }
+}

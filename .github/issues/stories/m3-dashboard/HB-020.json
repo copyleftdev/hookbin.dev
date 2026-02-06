@@ -1,0 +1,24 @@
+{
+  "id": "HB-020",
+  "type": "story",
+  "title": "Dashboard shell: layout, styling, router",
+  "status": "open",
+  "epic": "HB-018",
+  "milestone": "M3: Dashboard",
+  "points": 3,
+  "depends_on": ["HB-019"],
+  "blocks": ["HB-021"],
+  "labels": ["frontend", "dashboard"],
+  "description": "Create the three UI files: index.html layout shell, style.css dark theme, app.js hash router with API client module and view switching skeleton.",
+  "acceptance_criteria": [
+    "index.html has header bar with 'hookbin' branding and health status indicator",
+    "style.css implements dark theme with CSS custom properties",
+    "app.js implements hash-based routing (#/hooks, #/hooks/{id}, #/hooks/{id}/requests/{rid})",
+    "API client module wraps fetch calls with error handling",
+    "View containers switch based on hash route",
+    "All files under 20KB total"
+  ],
+  "technical_context": {
+    "files": ["ui/index.html", "ui/assets/style.css", "ui/assets/app.js"]
+  }
+}

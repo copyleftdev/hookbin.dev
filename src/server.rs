@@ -1,10 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::Router;
-use serde_json::json;
 
 use crate::config::Config;
 use crate::db::Database;
@@ -52,22 +49,14 @@ pub fn build_router(state: AppState) -> Router {
             "/h/{hook_id}",
             axum::routing::any(handlers::ingest::ingest_webhook),
         )
+        .route("/", axum::routing::get(handlers::dashboard::index))
+        .route(
+            "/assets/{*path}",
+            axum::routing::get(handlers::dashboard::static_asset),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(body_limit))
-        .fallback(fallback_handler)
+        .fallback(handlers::dashboard::spa_fallback)
         .with_state(state)
-}
-
-/// Fallback handler for undefined routes.
-///
-/// Returns a structured JSON 404 instead of Axum's default plain text.
-async fn fallback_handler() -> impl IntoResponse {
-    let body = json!({
-        "error": "not found",
-        "status": 404,
-        "suggestion": "Check the URL and try again",
-    });
-
-    (StatusCode::NOT_FOUND, axum::Json(body))
 }
 
 #[cfg(test)]
@@ -75,7 +64,7 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
     use axum::extract::connect_info::ConnectInfo;
-    use axum::http::Request;
+    use axum::http::{Request, StatusCode};
     use base64::Engine;
     use serde_json::Value;
     use std::net::SocketAddr;
@@ -140,15 +129,15 @@ mod tests {
         assert!(json["uptime_seconds"].is_number());
     }
 
-    // AC-3: Undefined route returns structured JSON 404
+    // AC-3: Undefined API route returns structured JSON 404
     #[tokio::test]
-    async fn undefined_route_returns_json_404() {
+    async fn undefined_api_route_returns_json_404() {
         let app = build_router(test_state());
 
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri("/nonexistent")
+                    .uri("/api/nonexistent")
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -163,6 +152,132 @@ mod tests {
         assert_eq!(json["error"], "not found");
         assert_eq!(json["status"], 404);
         assert!(json["suggestion"].is_string());
+    }
+
+    // Dashboard: GET / returns 200 with HTML
+    #[tokio::test]
+    async fn index_returns_html() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ct = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("text/html"), "expected text/html, got: {ct}");
+    }
+
+    // Dashboard: GET /assets/style.css returns 200 with CSS
+    #[tokio::test]
+    async fn static_css_returns_200() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/assets/style.css")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ct = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("text/css"), "expected text/css, got: {ct}");
+    }
+
+    // Dashboard: GET /assets/app.js returns 200 with JS
+    #[tokio::test]
+    async fn static_js_returns_200() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/assets/app.js")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ct = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            ct.contains("javascript"),
+            "expected javascript content-type, got: {ct}"
+        );
+    }
+
+    // Dashboard: SPA fallback serves index.html for non-API routes
+    #[tokio::test]
+    async fn spa_fallback_serves_index_html() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/hooks/some-id")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let ct = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("text/html"), "SPA fallback should serve HTML");
+    }
+
+    // Dashboard: /health fallback preserves normal behavior
+    #[tokio::test]
+    async fn health_fallback_preserved() {
+        let app = build_router(test_state());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // /health route should work normally, not be overridden by SPA fallback
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     // AC-5: AppState holds db, config, and start_time

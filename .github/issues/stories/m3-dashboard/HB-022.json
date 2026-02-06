@@ -1,0 +1,25 @@
+{
+  "id": "HB-022",
+  "type": "story",
+  "title": "Request feed: paginated request list per hook",
+  "status": "open",
+  "epic": "HB-018",
+  "milestone": "M3: Dashboard",
+  "points": 5,
+  "depends_on": ["HB-021"],
+  "blocks": ["HB-023"],
+  "labels": ["frontend", "dashboard"],
+  "description": "Implement request feed view in app.js. Show paginated list of captured requests for a hook with method badges, path, size, source IP, relative time. Load more pagination, back navigation to hook list.",
+  "acceptance_criteria": [
+    "Fetches GET /api/hooks/{id}/requests?limit=50&offset=0",
+    "Request rows show method badge (color-coded), path, size, source IP, relative time",
+    "Click request navigates to detail view",
+    "Load more button for pagination",
+    "Hook name and ingestion URL in header",
+    "Back link to hook list",
+    "Empty state and 'Showing X of Y' indicator"
+  ],
+  "technical_context": {
+    "files": ["ui/assets/app.js"]
+  }
+}

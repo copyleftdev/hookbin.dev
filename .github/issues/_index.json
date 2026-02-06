@@ -2,7 +2,7 @@
   "project": "hookbin.dev",
   "prefix": "HB",
   "description": "Single-binary webhook inbox — zero dependencies, TigerBeetle philosophy",
-  "total_issues": 17,
+  "total_issues": 23,
   "epics": [
     {
       "id": "HB-001",
@@ -24,6 +24,13 @@
       "status": "done",
       "children": ["HB-014", "HB-015", "HB-016", "HB-017"],
       "file": "epics/HB-013.json"
+    },
+    {
+      "id": "HB-018",
+      "title": "M3: Dashboard — embedded web UI, hook list, request feed, request inspector",
+      "status": "open",
+      "children": ["HB-019", "HB-020", "HB-021", "HB-022", "HB-023"],
+      "file": "epics/HB-018.json"
     }
   ],
   "stories": [
@@ -150,8 +157,53 @@
       "status": "done",
       "epic": "HB-013",
       "depends_on": ["HB-016"],
-      "blocks": [],
+      "blocks": ["HB-019"],
       "file": "stories/m2-api/HB-017.json"
+    },
+    {
+      "id": "HB-019",
+      "title": "Serve embedded static assets via rust-embed",
+      "status": "open",
+      "epic": "HB-018",
+      "depends_on": ["HB-017"],
+      "blocks": ["HB-020"],
+      "file": "stories/m3-dashboard/HB-019.json"
+    },
+    {
+      "id": "HB-020",
+      "title": "Dashboard shell: layout, styling, router",
+      "status": "open",
+      "epic": "HB-018",
+      "depends_on": ["HB-019"],
+      "blocks": ["HB-021"],
+      "file": "stories/m3-dashboard/HB-020.json"
+    },
+    {
+      "id": "HB-021",
+      "title": "Hook list view: display, create, delete",
+      "status": "open",
+      "epic": "HB-018",
+      "depends_on": ["HB-020"],
+      "blocks": ["HB-022"],
+      "file": "stories/m3-dashboard/HB-021.json"
+    },
+    {
+      "id": "HB-022",
+      "title": "Request feed: paginated request list per hook",
+      "status": "open",
+      "epic": "HB-018",
+      "depends_on": ["HB-021"],
+      "blocks": ["HB-023"],
+      "file": "stories/m3-dashboard/HB-022.json"
+    },
+    {
+      "id": "HB-023",
+      "title": "Request inspector: full detail with headers and body",
+      "status": "open",
+      "epic": "HB-018",
+      "depends_on": ["HB-022"],
+      "blocks": [],
+      "file": "stories/m3-dashboard/HB-023.json"
     }
   ],
   "dependency_graph": {
@@ -168,13 +220,18 @@
     "HB-014": { "depends_on": ["HB-009"], "blocks": ["HB-015", "HB-016"] },
     "HB-015": { "depends_on": ["HB-014"], "blocks": ["HB-016"] },
     "HB-016": { "depends_on": ["HB-014", "HB-015"], "blocks": ["HB-017"] },
-    "HB-017": { "depends_on": ["HB-016"], "blocks": [] }
+    "HB-017": { "depends_on": ["HB-016"], "blocks": ["HB-019"] },
+    "HB-019": { "depends_on": ["HB-017"], "blocks": ["HB-020"] },
+    "HB-020": { "depends_on": ["HB-019"], "blocks": ["HB-021"] },
+    "HB-021": { "depends_on": ["HB-020"], "blocks": ["HB-022"] },
+    "HB-022": { "depends_on": ["HB-021"], "blocks": ["HB-023"] },
+    "HB-023": { "depends_on": ["HB-022"], "blocks": [] }
   },
   "milestone_progress": {
     "M0: Foundation": { "total": 6, "done": 6 },
     "M1: Ingestion": { "total": 4, "done": 4 },
     "M2: API": { "total": 4, "done": 4 },
-    "M3: Dashboard": { "total": 0, "done": 0 },
+    "M3: Dashboard": { "total": 5, "done": 0 },
     "M4: Operations": { "total": 0, "done": 0 },
     "M5: Hardening": { "total": 0, "done": 0 }
   }

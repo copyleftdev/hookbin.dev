@@ -1,0 +1,25 @@
+{
+  "id": "HB-021",
+  "type": "story",
+  "title": "Hook list view: display, create, delete",
+  "status": "open",
+  "epic": "HB-018",
+  "milestone": "M3: Dashboard",
+  "points": 5,
+  "depends_on": ["HB-020"],
+  "blocks": ["HB-022"],
+  "labels": ["frontend", "dashboard"],
+  "description": "Implement hook list view in app.js. Fetch and display all hooks, create new hooks, delete hooks with confirmation, copy ingestion URL to clipboard, navigate to hook detail.",
+  "acceptance_criteria": [
+    "Fetches GET /api/hooks and renders list with name, ID, request count, ingestion URL",
+    "Create Hook button sends POST /api/hooks and refreshes list",
+    "Delete button per hook with confirmation dialog",
+    "Click hook navigates to #/hooks/{id}",
+    "Copy-to-clipboard for ingestion URL",
+    "Empty state message when no hooks exist",
+    "Error display for limit reached (409)"
+  ],
+  "technical_context": {
+    "files": ["ui/assets/app.js"]
+  }
+}
