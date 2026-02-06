@@ -2,7 +2,7 @@
   "id": "HB-011",
   "title": "Payload size enforcement on ingestion",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "high",
   "labels": ["story", "priority:high", "ingestion", "operations"],
   "milestone": "M1: Ingestion",
