@@ -64,6 +64,23 @@ pub async fn ingest_webhook(
 
     let request_id = captured.request_id.clone();
 
+    // Evict oldest requests if at capacity (circular buffer strategy).
+    // We keep max_requests - 1 so that after inserting the new one, total = max_requests.
+    let max_requests = state.config.max_requests;
+    let hook = state.db.get_hook(&hook_id)?;
+    if hook.request_count >= u64::from(max_requests) {
+        let keep = max_requests.saturating_sub(1);
+        let evicted = state.db.delete_oldest_requests(&hook_id, keep)?;
+        if evicted > 0 {
+            tracing::debug!(
+                hook_id = %hook_id,
+                evicted = evicted,
+                max_requests = max_requests,
+                "evicted oldest requests to maintain capacity"
+            );
+        }
+    }
+
     state.db.insert_request(&captured).map_err(|e| {
         tracing::error!(
             hook_id = %hook_id,

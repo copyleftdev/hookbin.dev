@@ -2,7 +2,7 @@
   "id": "HB-012",
   "title": "Resource bounds enforcement (max hooks, max requests per hook)",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "high",
   "labels": ["story", "priority:high", "ingestion", "operations", "storage"],
   "milestone": "M1: Ingestion",
