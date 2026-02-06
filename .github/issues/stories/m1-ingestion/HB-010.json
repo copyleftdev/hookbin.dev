@@ -2,7 +2,7 @@
   "id": "HB-010",
   "title": "Webhook ingestion endpoint (any method to /h/{hook_id})",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical", "ingestion"],
   "milestone": "M1: Ingestion",
