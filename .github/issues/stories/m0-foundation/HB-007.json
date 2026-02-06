@@ -2,7 +2,7 @@
   "id": "HB-007",
   "title": "Axum server skeleton with health check endpoint",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical", "api"],
   "milestone": "M0: Foundation",
