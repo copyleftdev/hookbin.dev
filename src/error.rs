@@ -21,6 +21,9 @@ pub enum AppError {
     #[error("payload too large: {size} bytes (max {max})")]
     PayloadTooLarge { size: usize, max: usize },
 
+    #[error("limit reached: {0}")]
+    LimitReached(String),
+
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -32,6 +35,7 @@ impl AppError {
             AppError::InvalidInput(_) => StatusCode::BAD_REQUEST,
             AppError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             AppError::PayloadTooLarge { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+            AppError::LimitReached(_) => StatusCode::CONFLICT,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -42,6 +46,9 @@ impl AppError {
             AppError::InvalidInput(_) => "Check your request parameters and try again",
             AppError::RateLimited => "Wait and retry, or increase your rate limit",
             AppError::PayloadTooLarge { .. } => "Reduce payload size or configure --max-payload",
+            AppError::LimitReached(_) => {
+                "Delete unused resources or increase the limit via CLI flags"
+            }
             AppError::Internal(_) => "This is a bug \u{2014} please report it",
         }
     }
@@ -132,6 +139,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn limit_reached_returns_409_with_suggestion() {
+        let (status, json) =
+            error_to_json(AppError::LimitReached("hook limit reached (2/2)".into())).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(json["status"], 409);
+        assert_eq!(json["error"], "limit reached: hook limit reached (2/2)");
+        assert!(json["suggestion"]
+            .as_str()
+            .unwrap()
+            .contains("Delete unused"));
+    }
+
+    #[tokio::test]
     async fn internal_returns_500_with_bug_report_suggestion() {
         let (status, json) = error_to_json(AppError::Internal("disk write failed".into())).await;
 
@@ -151,6 +172,7 @@ mod tests {
             AppError::InvalidInput("y".into()),
             AppError::RateLimited,
             AppError::PayloadTooLarge { size: 1, max: 0 },
+            AppError::LimitReached("test".into()),
             AppError::Internal("z".into()),
         ];
 
@@ -176,6 +198,10 @@ mod tests {
         assert_eq!(
             AppError::PayloadTooLarge { size: 100, max: 50 }.to_string(),
             "payload too large: 100 bytes (max 50)"
+        );
+        assert_eq!(
+            AppError::LimitReached("max hooks".into()).to_string(),
+            "limit reached: max hooks"
         );
         assert_eq!(
             AppError::Internal("oops".into()).to_string(),

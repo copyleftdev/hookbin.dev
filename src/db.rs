@@ -162,6 +162,13 @@ impl Database {
         })
     }
 
+    /// Count total hooks in the database.
+    pub fn count_hooks(&self) -> Result<u32, AppError> {
+        let conn = self.lock()?;
+        conn.query_row("SELECT COUNT(*) FROM hooks", [], |row| row.get(0))
+            .map_err(|e| AppError::Internal(format!("failed to count hooks: {e}")))
+    }
+
     // -- Request operations --
 
     /// Insert a captured webhook request.
@@ -254,6 +261,50 @@ impl Database {
         }
 
         Ok(results)
+    }
+
+    /// Delete oldest requests for a hook, keeping only the newest `keep` requests.
+    /// Returns the number of deleted requests.
+    /// Also updates the hook's request_count to reflect the deletion.
+    pub fn delete_oldest_requests(&self, hook_id: &str, keep: u32) -> Result<u32, AppError> {
+        let conn = self.lock()?;
+
+        // Delete all but the newest `keep` requests for this hook.
+        // The subquery selects request_ids to keep (newest by received_at).
+        let deleted = conn
+            .execute(
+                "DELETE FROM requests
+                 WHERE hook_id = ?1
+                   AND request_id NOT IN (
+                       SELECT request_id FROM requests
+                       WHERE hook_id = ?1
+                       ORDER BY received_at DESC
+                       LIMIT ?2
+                   )",
+                params![hook_id, keep],
+            )
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "failed to delete oldest requests for hook '{hook_id}': {e}"
+                ))
+            })?;
+
+        // Update hook's request_count to match actual row count
+        if deleted > 0 {
+            conn.execute(
+                "UPDATE hooks SET request_count = (
+                     SELECT COUNT(*) FROM requests WHERE hook_id = ?1
+                 ) WHERE hook_id = ?1",
+                params![hook_id],
+            )
+            .map_err(|e| {
+                AppError::Internal(format!(
+                    "failed to update request count for hook '{hook_id}': {e}"
+                ))
+            })?;
+        }
+
+        Ok(deleted as u32)
     }
 
     /// Get access to the underlying connection for pragma checks in tests.
@@ -553,6 +604,93 @@ mod tests {
         assert!(results[0].headers.is_empty());
         assert!(results[0].body.is_empty());
         assert_eq!(results[0].content_length, 0);
+    }
+
+    // HB-012 AC-5: count_hooks returns correct count
+    #[test]
+    fn count_hooks_empty() {
+        let db = test_db();
+        assert_eq!(db.count_hooks().unwrap(), 0);
+    }
+
+    #[test]
+    fn count_hooks_after_inserts() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Hook 1")).unwrap();
+        db.insert_hook(&make_hook("h2", "Hook 2")).unwrap();
+        db.insert_hook(&make_hook("h3", "Hook 3")).unwrap();
+        assert_eq!(db.count_hooks().unwrap(), 3);
+    }
+
+    // HB-012 AC-6: delete_oldest_requests evicts oldest, preserves newest
+    #[test]
+    fn delete_oldest_requests_evicts_oldest() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Eviction Hook")).unwrap();
+
+        // Insert 5 requests with sequential timestamps
+        for i in 0..5 {
+            let mut req = make_request(&format!("r{i}"), "h1");
+            req.received_at = 1000 + i as i64;
+            db.insert_request(&req).unwrap();
+        }
+        assert_eq!(db.get_hook("h1").unwrap().request_count, 5);
+
+        // Keep only the 3 newest
+        let deleted = db.delete_oldest_requests("h1", 3).unwrap();
+        assert_eq!(deleted, 2);
+
+        // Verify the 3 newest remain
+        let remaining = db.list_requests("h1", 10).unwrap();
+        assert_eq!(remaining.len(), 3);
+        assert_eq!(remaining[0].request_id, "r4"); // newest
+        assert_eq!(remaining[1].request_id, "r3");
+        assert_eq!(remaining[2].request_id, "r2");
+
+        // Verify request_count updated
+        assert_eq!(db.get_hook("h1").unwrap().request_count, 3);
+    }
+
+    #[test]
+    fn delete_oldest_requests_no_op_when_under_limit() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Under Limit")).unwrap();
+
+        let mut req = make_request("r1", "h1");
+        req.received_at = 1000;
+        db.insert_request(&req).unwrap();
+
+        // Keep 5 but only 1 exists — no deletions
+        let deleted = db.delete_oldest_requests("h1", 5).unwrap();
+        assert_eq!(deleted, 0);
+
+        let remaining = db.list_requests("h1", 10).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(db.get_hook("h1").unwrap().request_count, 1);
+    }
+
+    #[test]
+    fn delete_oldest_requests_does_not_affect_other_hooks() {
+        let db = test_db();
+        db.insert_hook(&make_hook("h1", "Hook 1")).unwrap();
+        db.insert_hook(&make_hook("h2", "Hook 2")).unwrap();
+
+        for i in 0..3 {
+            let mut req = make_request(&format!("h1-r{i}"), "h1");
+            req.received_at = 1000 + i as i64;
+            db.insert_request(&req).unwrap();
+        }
+        for i in 0..3 {
+            let mut req = make_request(&format!("h2-r{i}"), "h2");
+            req.received_at = 1000 + i as i64;
+            db.insert_request(&req).unwrap();
+        }
+
+        // Evict from h1 only
+        db.delete_oldest_requests("h1", 1).unwrap();
+
+        assert_eq!(db.list_requests("h1", 10).unwrap().len(), 1);
+        assert_eq!(db.list_requests("h2", 10).unwrap().len(), 3); // untouched
     }
 
     // Index existence check

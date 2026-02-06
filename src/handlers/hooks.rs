@@ -27,6 +27,15 @@ pub async fn create_hook(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<impl IntoResponse, AppError> {
+    // Enforce max_hooks limit
+    let current_hooks = state.db.count_hooks()?;
+    if current_hooks >= state.config.max_hooks {
+        return Err(AppError::LimitReached(format!(
+            "hook limit reached ({current_hooks}/{max_hooks}) — delete unused hooks or increase --max-hooks",
+            max_hooks = state.config.max_hooks,
+        )));
+    }
+
     // Parse the body: empty body → default, otherwise parse as JSON
     let request: CreateHookRequest = if body.is_empty() {
         CreateHookRequest::default()

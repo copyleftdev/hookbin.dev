@@ -892,4 +892,286 @@ mod tests {
         assert!(json["status"].is_number(), "missing 'status' field");
         assert!(json["suggestion"].is_string(), "missing 'suggestion' field");
     }
+
+    // -- HB-012: Resource bounds enforcement tests --
+
+    // AC-1: Creating a hook when at max_hooks returns 409
+    #[tokio::test]
+    async fn create_hook_at_max_hooks_returns_409() {
+        let config = Config {
+            max_hooks: 2,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+
+        // Create 2 hooks (at the limit)
+        create_test_hook(&state, "Hook 1").await;
+        create_test_hook(&state, "Hook 2").await;
+
+        // Third hook should be rejected
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/hooks")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"name": "Hook 3"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["status"], 409);
+        assert!(json["error"]
+            .as_str()
+            .unwrap()
+            .contains("hook limit reached"));
+        assert!(json["error"].as_str().unwrap().contains("2/2"));
+        assert!(json["suggestion"].is_string());
+    }
+
+    // AC-2: Creating a hook when under max_hooks succeeds
+    #[tokio::test]
+    async fn create_hook_under_max_hooks_succeeds() {
+        let config = Config {
+            max_hooks: 2,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+
+        // Create 1 hook (under the limit)
+        create_test_hook(&state, "Hook 1").await;
+
+        // Second hook should succeed
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/hooks")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(r#"{"name": "Hook 2"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    // AC-3: Ingesting at max_requests evicts oldest, keeps total at max_requests
+    #[tokio::test]
+    async fn ingest_at_max_requests_evicts_oldest() {
+        let config = Config {
+            max_requests: 3,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Eviction Test").await;
+
+        // Ingest 3 requests (at capacity)
+        for i in 0..3 {
+            let app = build_test_router(state.clone());
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!("/h/{hook_id}"))
+                        .body(axum::body::Body::from(format!("request-{i}")))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        // Verify 3 stored
+        assert_eq!(state.db.list_requests(&hook_id, 10).unwrap().len(), 3);
+
+        // Collect all request_ids before the 4th insert
+        let ids_before: Vec<String> = state
+            .db
+            .list_requests(&hook_id, 10)
+            .unwrap()
+            .iter()
+            .map(|r| r.request_id.clone())
+            .collect();
+
+        // Ingest a 4th request — should evict one of the oldest
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from("request-new"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Verify total is still 3 (one was evicted)
+        let requests_after = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests_after.len(), 3);
+
+        // Verify the new request is present
+        let has_new = requests_after.iter().any(|r| r.body == b"request-new");
+        assert!(has_new, "new request should be stored");
+
+        // Verify one of the old requests was evicted
+        let remaining_old: Vec<_> = requests_after
+            .iter()
+            .filter(|r| ids_before.contains(&r.request_id))
+            .collect();
+        assert_eq!(
+            remaining_old.len(),
+            2,
+            "one old request should have been evicted"
+        );
+    }
+
+    // AC-4: Ingesting under max_requests stores normally (no eviction)
+    #[tokio::test]
+    async fn ingest_under_max_requests_no_eviction() {
+        let config = Config {
+            max_requests: 3,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Under Limit").await;
+
+        // Ingest 1 request
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from("first"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Ingest a 2nd request — no eviction expected
+        let app = build_test_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from("second"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 2);
+    }
+
+    // AC-1 edge: max_hooks = 0 means no hooks can be created
+    #[tokio::test]
+    async fn create_hook_max_hooks_zero_rejects() {
+        let config = Config {
+            max_hooks: 0,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    // AC-3 edge: max_requests = 1 means only the latest request is kept
+    #[tokio::test]
+    async fn ingest_max_requests_one_keeps_only_latest() {
+        let config = Config {
+            max_requests: 1,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Single Slot").await;
+
+        // Ingest first
+        let app = build_test_router(state.clone());
+        app.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/h/{hook_id}"))
+                .body(axum::body::Body::from("first"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        // Ingest second — should evict first
+        let app = build_test_router(state.clone());
+        app.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/h/{hook_id}"))
+                .body(axum::body::Body::from("second"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].body, b"second");
+    }
+
+    // AC-1: 409 error includes structured JSON with suggestion
+    #[tokio::test]
+    async fn create_hook_limit_error_is_structured_json() {
+        let config = Config {
+            max_hooks: 1,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        create_test_hook(&state, "Only Hook").await;
+
+        let app = build_router(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/hooks")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(json["error"].is_string(), "missing 'error' field");
+        assert!(json["status"].is_number(), "missing 'status' field");
+        assert!(json["suggestion"].is_string(), "missing 'suggestion' field");
+        assert!(json["error"].as_str().unwrap().contains("--max-hooks"));
+    }
 }
