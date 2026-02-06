@@ -87,8 +87,6 @@ hookbin serve [OPTIONS]
 | `--data` | `./hookbin-data` | Data directory for SQLite database |
 | `--max-hooks` | `100` | Maximum number of hooks |
 | `--max-payload` | `1048576` | Maximum payload size in bytes (1 MB) |
-| `--retention` | `86400` | Request retention in seconds (24 hours) |
-| `--rate-limit` | `60` | Rate limit per hook (requests/minute) |
 | `--max-requests` | `1000` | Max stored requests per hook |
 | `--config` | — | Path to TOML config file |
 
@@ -100,8 +98,6 @@ port = 8080
 data = "/var/lib/hookbin"
 max_hooks = 50
 max_payload = 2097152
-retention = 172800
-rate_limit = 120
 max_requests = 500
 ```
 
@@ -117,10 +113,10 @@ Hookbin follows the [TigerBeetle philosophy](https://tigerbeetle.com/): determin
 |----------|---------|--------------|
 | Max hooks | 100 | `--max-hooks` |
 | Max payload size | 1 MB | `--max-payload` |
-| Request retention | 24 hours | `--retention` |
-| Rate limit per hook | 60 req/min | `--rate-limit` |
 | Max requests per hook | 1,000 | `--max-requests` |
 | SQLite WAL mode | Always on | — |
+
+**Planned:** rate limiting (per-hook token bucket) and automatic retention cleanup are coming in M4.
 
 Everything is bounded. Nothing grows without limit.
 
@@ -166,8 +162,8 @@ src/
   models.rs            # Hook, Request structs
   config.rs            # CLI args + TOML config (3-layer merge)
   error.rs             # AppError with structured suggestions
-  retention.rs         # Background cleanup task
-  rate_limit.rs        # In-process token bucket
+  retention.rs         # Background cleanup task (planned — M4)
+  rate_limit.rs        # In-process token bucket (planned — M4)
   handlers/
     ingest.rs          # POST /h/{hook_id} — capture webhook
     hooks.rs           # CRUD hooks
