@@ -8,8 +8,16 @@
 </head>
 <body>
 <div id="app">
-  <header><h1>hookbin</h1></header>
-  <main id="content"><p>Loading...</p></main>
+  <header id="header">
+    <a href="#/hooks" class="logo">hookbin</a>
+    <span id="health-status" class="health-indicator" title="Checking..."></span>
+  </header>
+  <main id="content">
+    <div id="view-hooks" class="view"></div>
+    <div id="view-requests" class="view"></div>
+    <div id="view-detail" class="view"></div>
+    <div id="view-loading" class="view"><p class="empty-state">Loading...</p></div>
+  </main>
 </div>
 <script src="/assets/app.js"></script>
 </body>
