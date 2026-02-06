@@ -2,7 +2,7 @@
   "id": "HB-003",
   "title": "Implement AppError type with structured responses",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical"],
   "milestone": "M0: Foundation",
