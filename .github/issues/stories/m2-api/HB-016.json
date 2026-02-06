@@ -1,0 +1,101 @@
+{
+  "id": "HB-016",
+  "title": "List captured requests endpoint (GET /api/hooks/{id}/requests)",
+  "type": "story",
+  "status": "done",
+  "priority": "high",
+  "labels": ["story", "priority:high", "api"],
+  "milestone": "M2: API",
+  "epic": "HB-013",
+  "depends_on": ["HB-014", "HB-015"],
+  "blocks": ["HB-017"],
+  "user_story": "As a user, I need to list the captured webhook requests for a specific hook so I can see what has been received.",
+  "description": "Implement GET /api/hooks/{id}/requests to return a paginated list of captured requests. Supports ?limit=N (default 50, max 200) and ?offset=N (default 0) query parameters. Each request in the list includes summary fields: request_id, method, path, content_length, source_ip, received_at — but NOT the full body or headers (those are in the detail endpoint). The response includes 'requests' array, 'count' (items returned), and 'total' (total requests for this hook). Returns 404 if the hook doesn't exist. A new database method list_requests_paginated() supports offset-based pagination.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a hook with 5 captured requests",
+      "when": "sending GET /api/hooks/{id}/requests",
+      "then": "response is 200 with JSON containing 'requests' array of 5 items, 'count': 5, 'total': 5"
+    },
+    {
+      "id": "AC-2",
+      "given": "a hook with 10 captured requests",
+      "when": "sending GET /api/hooks/{id}/requests?limit=3&offset=2",
+      "then": "response contains 3 requests starting from the 3rd newest, 'count': 3, 'total': 10"
+    },
+    {
+      "id": "AC-3",
+      "given": "a hook with captured requests",
+      "when": "listing requests",
+      "then": "each request summary contains request_id, method, path, content_length, source_ip, received_at but NOT body or headers"
+    },
+    {
+      "id": "AC-4",
+      "given": "a hook with no requests",
+      "when": "sending GET /api/hooks/{id}/requests",
+      "then": "response is 200 with empty 'requests' array, 'count': 0, 'total': 0"
+    },
+    {
+      "id": "AC-5",
+      "given": "no hook with hook_id 'nonexistent'",
+      "when": "sending GET /api/hooks/nonexistent/requests",
+      "then": "response is 404 with structured JSON error"
+    },
+    {
+      "id": "AC-6",
+      "given": "a request with limit > 200",
+      "when": "sending GET /api/hooks/{id}/requests?limit=500",
+      "then": "limit is clamped to 200 (no error, just cap the value)"
+    },
+    {
+      "id": "AC-7",
+      "given": "multiple captured requests",
+      "when": "listing requests",
+      "then": "requests are ordered by received_at descending (newest first)"
+    },
+    {
+      "id": "AC-8",
+      "given": "this feature",
+      "when": "running cargo test",
+      "then": "integration tests verify pagination, ordering, empty list, 404, and limit clamping"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "serde", "serde_json"],
+    "files": ["src/db.rs", "src/handlers/requests.rs", "src/server.rs"],
+    "functions": [
+      {
+        "name": "list_requests_paginated",
+        "signature": "pub fn list_requests_paginated(&self, hook_id: &str, limit: u32, offset: u32) -> Result<Vec<CapturedRequest>, AppError>",
+        "description": "List requests for a hook with offset-based pagination, newest first"
+      },
+      {
+        "name": "count_requests",
+        "signature": "pub fn count_requests(&self, hook_id: &str) -> Result<u32, AppError>",
+        "description": "Count total requests for a hook (for pagination metadata)"
+      },
+      {
+        "name": "list_requests_handler",
+        "signature": "pub async fn list_requests(State(state): State<AppState>, Path(hook_id): Path<String>, Query(params): Query<PaginationParams>) -> Result<impl IntoResponse, AppError>",
+        "description": "GET /api/hooks/{id}/requests — paginated request listing"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 10,
+      "throughput_per_second": 5000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Pagination bounded by max 200 per page. Total requests per hook bounded by max_requests. Query uses existing index on (hook_id, received_at DESC)."
+  },
+  "estimate": {
+    "points": 5,
+    "confidence": "high"
+  }
+}

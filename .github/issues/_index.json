@@ -138,7 +138,7 @@
     {
       "id": "HB-016",
       "title": "List captured requests endpoint (GET /api/hooks/{id}/requests)",
-      "status": "ready",
+      "status": "done",
       "epic": "HB-013",
       "depends_on": ["HB-014", "HB-015"],
       "blocks": ["HB-017"],
@@ -173,7 +173,7 @@
   "milestone_progress": {
     "M0: Foundation": { "total": 6, "done": 6 },
     "M1: Ingestion": { "total": 4, "done": 4 },
-    "M2: API": { "total": 4, "done": 2 },
+    "M2: API": { "total": 4, "done": 3 },
     "M3: Dashboard": { "total": 0, "done": 0 },
     "M4: Operations": { "total": 0, "done": 0 },
     "M5: Hardening": { "total": 0, "done": 0 }
