@@ -1,0 +1,84 @@
+{
+  "id": "HB-009",
+  "title": "Hook creation endpoint (POST /api/hooks)",
+  "type": "story",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["story", "priority:critical", "ingestion", "api"],
+  "milestone": "M1: Ingestion",
+  "epic": "HB-008",
+  "depends_on": ["HB-007"],
+  "blocks": ["HB-010", "HB-012"],
+  "user_story": "As a developer, I need to create a webhook inbox via the API so that I have a URL to give to external services for sending webhooks.",
+  "description": "Implement POST /api/hooks to create a new hook. The endpoint accepts an optional JSON body with a name field, generates a nanoid hook_id, stores the hook in SQLite, and returns the created hook with its ingestion URL. Input validation ensures name length is bounded. The handler is wired into the Axum router.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a running server",
+      "when": "sending POST /api/hooks with body {\"name\": \"My Webhook\"}",
+      "then": "response is 201 with JSON containing hook_id (nanoid), name, created_at, request_count (0), and url (/h/{hook_id})"
+    },
+    {
+      "id": "AC-2",
+      "given": "a running server",
+      "when": "sending POST /api/hooks with empty body or {}",
+      "then": "response is 201 with an auto-generated name (e.g. \"hook-{short_id}\")"
+    },
+    {
+      "id": "AC-3",
+      "given": "a running server",
+      "when": "sending POST /api/hooks with a name longer than 100 characters",
+      "then": "response is 400 with structured error: invalid input, suggestion to shorten name"
+    },
+    {
+      "id": "AC-4",
+      "given": "a running server",
+      "when": "sending POST /api/hooks with invalid JSON",
+      "then": "response is 400 with structured error and suggestion"
+    },
+    {
+      "id": "AC-5",
+      "given": "a hook was created",
+      "when": "querying the database directly",
+      "then": "the hook exists in the hooks table with correct fields"
+    },
+    {
+      "id": "AC-6",
+      "given": "this endpoint",
+      "when": "running cargo test",
+      "then": "integration tests verify all acceptance criteria via axum::test (oneshot requests)"
+    }
+  ],
+  "technical_context": {
+    "crates": ["axum", "serde", "serde_json", "nanoid"],
+    "files": ["src/handlers/hooks.rs", "src/server.rs"],
+    "functions": [
+      {
+        "name": "create_hook",
+        "signature": "pub async fn create_hook(State(state): State<AppState>, Json(body): Json<CreateHookRequest>) -> Result<impl IntoResponse, AppError>",
+        "description": "Handle POST /api/hooks — validate input, create hook, store in DB, return 201"
+      },
+      {
+        "name": "CreateHookRequest",
+        "signature": "pub struct CreateHookRequest { pub name: Option<String> }",
+        "description": "Deserialized request body for hook creation"
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 5,
+      "throughput_per_second": 1000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Hook creation writes to SQLite. nanoid generation is in-process."
+  },
+  "estimate": {
+    "points": 3,
+    "confidence": "high"
+  }
+}

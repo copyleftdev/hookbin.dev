@@ -1,0 +1,46 @@
+{
+  "id": "HB-008",
+  "title": "M1: Ingestion — webhook capture, hook creation, resource limits",
+  "type": "epic",
+  "status": "ready",
+  "priority": "critical",
+  "labels": ["epic", "priority:critical", "ingestion"],
+  "milestone": "M1: Ingestion",
+  "description": "Implement the core webhook capture flow: create hooks via API, receive webhooks at /h/{hook_id}, enforce payload size and resource bounds. After this milestone, hookbin is usable — you can create a hook, POST webhooks to it, and they're stored in SQLite. Resource limits (max hooks, max payload, max requests per hook) are enforced from day one.",
+  "goals": [
+    "POST /api/hooks creates a new webhook inbox and returns its ingestion URL",
+    "Any HTTP method to /h/{hook_id} captures the full request (method, headers, body, source IP)",
+    "Payload size is enforced before storage — oversized requests are rejected with 413",
+    "Max hooks limit prevents unbounded growth of hook inboxes",
+    "Max requests per hook evicts oldest requests when the limit is reached",
+    "All resource bounds come from Config (CLI flags / TOML)"
+  ],
+  "children": ["HB-009", "HB-010", "HB-011", "HB-012"],
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a running hookbin server",
+      "when": "creating a hook via POST /api/hooks and then POSTing a webhook to /h/{hook_id}",
+      "then": "the webhook is captured and stored in SQLite with all metadata"
+    },
+    {
+      "id": "AC-2",
+      "given": "a running hookbin server",
+      "when": "sending a payload larger than --max-payload",
+      "then": "the server rejects with 413 and a structured error with suggestion"
+    },
+    {
+      "id": "AC-3",
+      "given": "a running hookbin server at --max-hooks limit",
+      "when": "attempting to create another hook",
+      "then": "the server rejects with a structured error"
+    }
+  ],
+  "out_of_scope": [
+    "Hook listing, deletion, detail (M2: API)",
+    "Request listing and inspection (M2: API)",
+    "Rate limiting (M4: Operations)",
+    "Retention cleanup (M4: Operations)",
+    "Dashboard UI (M3: Dashboard)"
+  ]
+}

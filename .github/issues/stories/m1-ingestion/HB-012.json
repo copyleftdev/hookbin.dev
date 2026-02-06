@@ -1,0 +1,90 @@
+{
+  "id": "HB-012",
+  "title": "Resource bounds enforcement (max hooks, max requests per hook)",
+  "type": "story",
+  "status": "ready",
+  "priority": "high",
+  "labels": ["story", "priority:high", "ingestion", "operations", "storage"],
+  "milestone": "M1: Ingestion",
+  "epic": "HB-008",
+  "depends_on": ["HB-009", "HB-010"],
+  "blocks": [],
+  "user_story": "As an operator, I need the server to enforce bounded resource usage so that the system doesn't grow unboundedly and exhaust disk space or memory.",
+  "description": "Enforce two TigerBeetle-style resource bounds: (1) max_hooks — reject hook creation when the limit is reached, and (2) max_requests per hook — evict the oldest requests when a hook exceeds its request storage limit. Both limits come from Config. New database methods are needed: count_hooks() for the hook limit check, and delete_oldest_requests() for request eviction. The eviction strategy is 'circular buffer': when a new request arrives and the hook is at max_requests, the oldest request is deleted before inserting the new one.",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "given": "a server configured with --max-hooks 2 and 2 hooks already exist",
+      "when": "sending POST /api/hooks to create a third hook",
+      "then": "response is 409 with structured JSON error: 'hook limit reached (2/2)', suggestion to delete unused hooks or increase --max-hooks"
+    },
+    {
+      "id": "AC-2",
+      "given": "a server configured with --max-hooks 2 and only 1 hook exists",
+      "when": "sending POST /api/hooks",
+      "then": "the hook is created successfully (201)"
+    },
+    {
+      "id": "AC-3",
+      "given": "a server configured with --max-requests 3 and a hook with 3 stored requests",
+      "when": "sending a new webhook to /h/{hook_id}",
+      "then": "the oldest request is evicted, the new request is stored, and the total remains at 3"
+    },
+    {
+      "id": "AC-4",
+      "given": "a server configured with --max-requests 3 and a hook with 1 stored request",
+      "when": "sending a new webhook to /h/{hook_id}",
+      "then": "the new request is stored normally (no eviction), total becomes 2"
+    },
+    {
+      "id": "AC-5",
+      "given": "the database",
+      "when": "calling count_hooks()",
+      "then": "the correct number of hooks is returned"
+    },
+    {
+      "id": "AC-6",
+      "given": "a hook at max_requests capacity",
+      "when": "delete_oldest_requests is called",
+      "then": "only the oldest requests are deleted, newest are preserved, and the hook's request_count is updated"
+    },
+    {
+      "id": "AC-7",
+      "given": "this feature",
+      "when": "running cargo test",
+      "then": "tests verify both limits with edge cases: at limit, over limit, zero hooks, single request eviction"
+    }
+  ],
+  "technical_context": {
+    "crates": ["rusqlite"],
+    "files": ["src/db.rs", "src/handlers/hooks.rs", "src/handlers/ingest.rs"],
+    "functions": [
+      {
+        "name": "count_hooks",
+        "signature": "pub fn count_hooks(&self) -> Result<u32, AppError>",
+        "description": "Count total hooks in the database for max_hooks enforcement"
+      },
+      {
+        "name": "delete_oldest_requests",
+        "signature": "pub fn delete_oldest_requests(&self, hook_id: &str, keep: u32) -> Result<u32, AppError>",
+        "description": "Delete oldest requests for a hook, keeping only the newest 'keep' requests. Returns number deleted."
+      }
+    ],
+    "performance_constraints": {
+      "latency_budget_ms": 5,
+      "throughput_per_second": 5000
+    }
+  },
+  "single_binary_checklist": {
+    "no_external_db": true,
+    "no_external_services": true,
+    "resource_bounded": true,
+    "crash_safe": true,
+    "no_unwrap": true,
+    "notes": "Resource bounds are the core TigerBeetle principle. Both limits configurable via CLI/TOML. Eviction is deterministic (oldest first by received_at)."
+  },
+  "estimate": {
+    "points": 5,
+    "confidence": "high"
+  }
+}
