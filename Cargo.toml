@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "Single-binary webhook inbox. Accept HTTP, store it, show it."
 license = "MIT"
+repository = "https://github.com/copyleftdev/hookbin.dev"
+homepage = "https://hook-bin.dev"
+documentation = "https://github.com/copyleftdev/hookbin.dev#readme"
+keywords = ["webhook", "http", "inspector", "debugging", "sqlite"]
+categories = ["command-line-utilities", "development-tools", "web-programming::http-server"]
+readme = "README.md"
 
 [[bin]]
 name = "hookbin"
