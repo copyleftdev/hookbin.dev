@@ -2,7 +2,7 @@
   "id": "HB-002",
   "title": "Initialize Cargo project with module structure",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical"],
   "milestone": "M0: Foundation",
