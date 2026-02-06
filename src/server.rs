@@ -21,6 +21,11 @@ pub struct AppState {
 
 /// Build the Axum router with all routes and shared state.
 pub fn build_router(state: AppState) -> Router {
+    // Set body limit slightly above max_payload so our handler's check
+    // produces a structured JSON 413 for normal oversized payloads,
+    // while DefaultBodyLimit acts as a safety net against truly huge bodies.
+    let body_limit = state.config.max_payload.saturating_add(1);
+
     Router::new()
         .route(
             "/health",
@@ -34,6 +39,7 @@ pub fn build_router(state: AppState) -> Router {
             "/h/{hook_id}",
             axum::routing::any(handlers::ingest::ingest_webhook),
         )
+        .layer(axum::extract::DefaultBodyLimit::max(body_limit))
         .fallback(fallback_handler)
         .with_state(state)
 }
@@ -74,6 +80,16 @@ mod tests {
     fn build_test_router(state: AppState) -> Router {
         let addr: SocketAddr = "192.168.1.42:12345".parse().unwrap();
         build_router(state).layer(axum::Extension(ConnectInfo(addr)))
+    }
+
+    /// Build a test state with a custom config.
+    fn test_state_with_config(config: Config) -> AppState {
+        let db = Database::open_in_memory().expect("test db");
+        AppState {
+            db: Arc::new(db),
+            config: Arc::new(config),
+            start_time: Instant::now(),
+        }
     }
 
     /// Helper: create a hook via the API and return the hook_id.
@@ -693,5 +709,187 @@ mod tests {
         assert_eq!(requests.len(), 1);
         // Our test helper sets ConnectInfo to 192.168.1.42:12345
         assert_eq!(requests[0].source_ip, "192.168.1.42");
+    }
+
+    // -- HB-011: Payload size enforcement tests --
+
+    // AC-1: Body exceeding max_payload returns 413 with structured error
+    #[tokio::test]
+    async fn ingest_oversized_payload_returns_413() {
+        let config = Config {
+            max_payload: 1024,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Payload Test").await;
+        let app = build_test_router(state);
+
+        let oversized_body = vec![b'x'; 2000];
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from(oversized_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["status"], 413);
+        assert!(json["error"]
+            .as_str()
+            .unwrap()
+            .contains("payload too large"));
+        assert!(json["suggestion"]
+            .as_str()
+            .unwrap()
+            .contains("--max-payload"));
+    }
+
+    // AC-2: Body exactly at max_payload is accepted
+    #[tokio::test]
+    async fn ingest_payload_at_limit_accepted() {
+        let config = Config {
+            max_payload: 1024,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Limit Test").await;
+        let app = build_test_router(state.clone());
+
+        let exact_body = vec![b'x'; 1024];
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from(exact_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Verify stored
+        let requests = state.db.list_requests(&hook_id, 10).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].content_length, 1024);
+    }
+
+    // AC-2: Body one byte over limit is rejected
+    #[tokio::test]
+    async fn ingest_payload_one_over_limit_rejected() {
+        let config = Config {
+            max_payload: 1024,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Over Limit Test").await;
+        let app = build_test_router(state);
+
+        let over_body = vec![b'x'; 1025];
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from(over_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    // AC-3: Empty body with low max_payload still accepted
+    #[tokio::test]
+    async fn ingest_empty_body_with_low_limit_accepted() {
+        let config = Config {
+            max_payload: 1024,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "Empty With Limit").await;
+        let app = build_test_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // AC-4: Default config (1MB) accepts small payloads
+    #[tokio::test]
+    async fn ingest_default_limit_accepts_small_payload() {
+        let state = test_state();
+        let hook_id = create_test_hook(&state, "Default Limit").await;
+        let app = build_test_router(state);
+
+        let small_body = vec![b'x'; 1000];
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from(small_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // AC-5: Rejection is structured JSON, not plain text
+    #[tokio::test]
+    async fn ingest_payload_rejection_is_structured_json() {
+        let config = Config {
+            max_payload: 100,
+            ..Config::default()
+        };
+        let state = test_state_with_config(config);
+        let hook_id = create_test_hook(&state, "JSON Error Test").await;
+        let app = build_test_router(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/h/{hook_id}"))
+                    .body(axum::body::Body::from(vec![b'x'; 200]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        // Must have all three structured error fields
+        assert!(json["error"].is_string(), "missing 'error' field");
+        assert!(json["status"].is_number(), "missing 'status' field");
+        assert!(json["suggestion"].is_string(), "missing 'suggestion' field");
     }
 }

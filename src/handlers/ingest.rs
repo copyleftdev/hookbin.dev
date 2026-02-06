@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use axum::body::Bytes;
+use axum::body::{to_bytes, Body};
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, Method, Uri};
@@ -14,6 +14,7 @@ use crate::server::AppState;
 /// Handle any HTTP method to /h/{hook_id} — capture the full request.
 ///
 /// Extracts method, headers, raw body, query string, and source IP.
+/// Enforces the configured max_payload limit before storing.
 /// Stores the captured request in SQLite and returns 200 with the request_id.
 pub async fn ingest_webhook(
     State(state): State<AppState>,
@@ -22,10 +23,29 @@ pub async fn ingest_webhook(
     method: Method,
     uri: Uri,
     headers: HeaderMap,
-    body: Bytes,
+    body: Body,
 ) -> Result<impl IntoResponse, AppError> {
     // Verify the hook exists
     state.db.get_hook(&hook_id)?;
+
+    let max_payload = state.config.max_payload;
+
+    // Collect the body up to max_payload + 1 bytes.
+    // DefaultBodyLimit on the route prevents truly huge bodies from reaching here.
+    // We read up to the limit and check the size for a structured JSON 413.
+    let body_bytes = to_bytes(body, max_payload.saturating_add(1))
+        .await
+        .map_err(|_| AppError::PayloadTooLarge {
+            size: max_payload + 1,
+            max: max_payload,
+        })?;
+
+    if body_bytes.len() > max_payload {
+        return Err(AppError::PayloadTooLarge {
+            size: body_bytes.len(),
+            max: max_payload,
+        });
+    }
 
     // Capture the full URI path including query string
     let path_and_query = uri
@@ -38,7 +58,7 @@ pub async fn ingest_webhook(
         method.as_str(),
         &path_and_query,
         &headers,
-        body.to_vec(),
+        body_bytes.to_vec(),
         addr.ip(),
     );
 
@@ -58,7 +78,7 @@ pub async fn ingest_webhook(
         hook_id = %hook_id,
         request_id = %request_id,
         method = %method,
-        content_length = body.len(),
+        content_length = body_bytes.len(),
         "webhook captured"
     );
 
