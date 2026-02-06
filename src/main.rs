@@ -8,14 +8,14 @@ mod retention;
 mod server;
 
 use clap::Parser;
-use config::Cli;
+use config::{Cli, Config};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        config::Commands::Serve(args) => {
+        config::Commands::Serve(ref args) => {
             tracing_subscriber::fmt()
                 .with_target(false)
                 .with_env_filter(
@@ -24,14 +24,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .init();
 
+            let config = match Config::load(args) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            };
+
             tracing::info!(
-                port = args.port,
-                data_dir = %args.data.display(),
-                "starting hookbin"
+                port = config.port,
+                data_dir = %config.data.display(),
+                max_hooks = config.max_hooks,
+                max_payload = config.max_payload,
+                retention_secs = config.retention,
+                rate_limit = config.rate_limit,
+                max_requests = config.max_requests,
+                "starting hookbin v{}",
+                env!("CARGO_PKG_VERSION")
             );
 
             // Placeholder until HB-007 wires up the server
-            tracing::info!("hookbin v{}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
     }
