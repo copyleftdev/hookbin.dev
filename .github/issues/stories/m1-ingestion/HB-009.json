@@ -2,7 +2,7 @@
   "id": "HB-009",
   "title": "Hook creation endpoint (POST /api/hooks)",
   "type": "story",
-  "status": "ready",
+  "status": "done",
   "priority": "critical",
   "labels": ["story", "priority:critical", "ingestion", "api"],
   "milestone": "M1: Ingestion",
