@@ -6,6 +6,8 @@
 |_| |_|\___/ \___/|_|\_\_.__/|_|_| |_|
 ```
 
+[![Tip my tokens](https://tokentip.to/badge/copyleftdev.svg?logo=1)](https://tokentip.to/@copyleftdev)
+
 **Single-binary webhook inbox. Accept HTTP, store it, show it. No external dependencies.**
 
 ---
